@@ -52,8 +52,14 @@ function WidgetRouter({ initialData }: { initialData: unknown }) {
     
     // Check if it's auth data (has 'authenticated')
     if ('authenticated' in data) {
-      console.log('[Widget] Detected auth data, staying on /');
-      setAuthData(data as unknown as AuthStatusOutput);
+      console.log('[Widget] Detected auth data, authType:', data.authType, 'staying on /');
+      setAuthData({
+        authenticated: data.authenticated as boolean,
+        authType: (data.authType as 'calendar' | 'github') || 'calendar',
+        authUrl: data.authUrl as string | undefined,
+        email: data.email as string | undefined,
+        user: data.user as any,
+      });
       setInitialRouteSet(true);
       return;
     }
@@ -79,7 +85,13 @@ function WidgetRouter({ initialData }: { initialData: unknown }) {
 
     // Handle regular auth data
     if ('authenticated' in data) {
-      return initialData as AuthStatusOutput;
+      return {
+        authenticated: data.authenticated as boolean,
+        authType: (data.authType as 'calendar' | 'github') || 'calendar',
+        authUrl: data.authUrl as string | undefined,
+        email: data.email as string | undefined,
+        user: data.user as any,
+      };
     }
 
     return authData;
