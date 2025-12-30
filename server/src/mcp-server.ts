@@ -13,6 +13,11 @@ import {
   respondToInvite,
 } from './calendar-service.js';
 import { isAuthenticated, getAuthUrl, getUserEmail } from './google-auth.js';
+import {
+  isGitHubAuthenticated,
+  getGitHubAuthUrl,
+  getGitHubUser,
+} from './github-auth.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -263,6 +268,34 @@ function getTools(): AppsTool[] {
         // 'openai/outputTemplate': 'ui://widget/calendar-widget.html',
         'openai/visibility': 'private', // Hidden from ChatGPT - only widget can call this
         'openai/widgetAccessible': true, // Widget can still call this for polling auth status
+      },
+    },
+    // ============================================
+    // GitHub Tools (Auth only)
+    // ============================================
+    {
+      name: 'check_github_auth_status',
+      title: 'Check GitHub Auth Status',
+      description: 'Check if the user is authenticated with GitHub. Returns authentication status and provides an auth URL if not authenticated.',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+        required: [],
+        additionalProperties: false,
+      },
+      annotations: {
+        title: 'Check GitHub Auth Status',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+      securitySchemes: [
+        { type: 'noauth' },
+      ],
+      _meta: {
+        'openai/visibility': 'private',
+        'openai/widgetAccessible': true,
       },
     },
   ];
@@ -523,6 +556,39 @@ function handleCheckAuthStatus(userId: string): AppsToolResponse {
   }
 }
 
+// ============================================
+// GitHub Tool Handlers
+// ============================================
+
+/**
+ * Handle check_github_auth_status tool
+ */
+function handleCheckGitHubAuthStatus(userId: string): AppsToolResponse {
+  const authenticated = isGitHubAuthenticated(userId);
+
+  if (authenticated) {
+    const user = getGitHubUser(userId);
+    return {
+      content: [{ type: 'text', text: `User is connected to GitHub as @${user?.login}.` }],
+      structuredContent: {
+        authenticated: true,
+        user,
+      },
+      isError: false,
+    };
+  } else {
+    const authUrl = getGitHubAuthUrl(userId);
+    return {
+      content: [{ type: 'text', text: 'User needs to connect GitHub.' }],
+      structuredContent: {
+        authenticated: false,
+        authUrl,
+      },
+      isError: false,
+    };
+  }
+}
+
 /**
  * MCP Server Information
  */
@@ -597,6 +663,10 @@ export function createMCPServer(): Server {
 
       case 'check_auth_status':
         return handleCheckAuthStatus(userId) as unknown as CallToolResult;
+
+      // GitHub Tools (Auth only)
+      case 'check_github_auth_status':
+        return handleCheckGitHubAuthStatus(userId) as unknown as CallToolResult;
 
       default:
         return {
@@ -764,6 +834,10 @@ export async function handleMCPRequest(
 
         case 'check_auth_status':
           return handleCheckAuthStatus(toolUserId);
+
+        // GitHub Tools (Auth only)
+        case 'check_github_auth_status':
+          return handleCheckGitHubAuthStatus(toolUserId);
 
         default:
           return {

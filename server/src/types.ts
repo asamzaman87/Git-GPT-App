@@ -1,4 +1,4 @@
-// OAuth Token Types
+// OAuth Token Types (Google)
 export interface OAuth2Tokens {
   access_token: string;
   refresh_token?: string;
@@ -16,6 +16,39 @@ export interface StoredTokenData {
 
 export interface TokenStore {
   [userId: string]: StoredTokenData;
+}
+
+// GitHub OAuth Types
+export interface GitHubTokens {
+  access_token: string;
+  token_type: string;
+  scope: string;
+}
+
+export interface GitHubUser {
+  id: number;
+  login: string;
+  name?: string;
+  email?: string;
+  avatar_url: string;
+}
+
+export interface StoredGitHubTokenData {
+  tokens: GitHubTokens;
+  user: GitHubUser;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GitHubTokenStore {
+  [userId: string]: StoredGitHubTokenData;
+}
+
+// GitHub Auth Status
+export interface GitHubAuthStatus {
+  authenticated: boolean;
+  user?: GitHubUser;
+  authUrl?: string;
 }
 
 // Calendar Event Types

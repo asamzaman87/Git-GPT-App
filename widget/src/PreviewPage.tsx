@@ -8,13 +8,18 @@ import './main.css';
 // Mock data
 const mockAuthNotConnected: AuthStatusOutput = {
   authenticated: false,
-  authUrl: 'https://accounts.google.com/oauth'
+  authUrl: 'https://github.com/login/oauth/authorize'
 };
 
 const mockAuthConnected: AuthStatusOutput = {
   authenticated: true,
-  email: 'user@example.com'
-};
+  user: {
+    login: 'octocat',
+    id: 1,
+    name: 'The Octocat',
+    avatar_url: 'https://github.com/octocat.png'
+  }
+} as any;
 
 const mockInvites: PendingInvitesOutput = {
   invites: [

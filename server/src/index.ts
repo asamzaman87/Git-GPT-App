@@ -33,11 +33,19 @@ import {
   getUserEmail,
 } from './google-auth.js';
 import {
+  validateGitHubConfig,
+  getGitHubAuthUrl,
+  handleGitHubOAuthCallback,
+  isGitHubAuthenticated,
+  getGitHubUser,
+  revokeGitHubTokens,
+} from './github-auth.js';
+import {
   getPendingInvites,
   respondToInvite,
 } from './calendar-service.js';
 import { handleMCPRequest } from './mcp-server.js';
-import { deleteTokens } from './token-store.js';
+import { deleteTokens, deleteGitHubTokens } from './token-store.js';
 import {
   validateClientCredentials,
   validateClientId,
@@ -252,11 +260,150 @@ app.get('/oauth/callback', async (req: Request, res: Response) => {
   }
 });
 
-// Logout
+// Logout (Google)
 app.post('/auth/logout', (_req: Request, res: Response) => {
   const userId = DEFAULT_USER_ID;
   deleteTokens(userId);
   res.json({ success: true, message: 'Logged out successfully' });
+});
+
+// ============================================
+// GitHub Authentication Routes
+// ============================================
+
+// Get GitHub auth status
+app.get('/auth/github/status', (_req: Request, res: Response) => {
+  const userId = DEFAULT_USER_ID;
+  const authenticated = isGitHubAuthenticated(userId);
+
+  if (authenticated) {
+    res.json({
+      authenticated: true,
+      user: getGitHubUser(userId),
+    });
+  } else {
+    res.json({
+      authenticated: false,
+      authUrl: getGitHubAuthUrl(userId),
+    });
+  }
+});
+
+// Initiate GitHub OAuth flow
+app.get('/auth/github', (_req: Request, res: Response) => {
+  const userId = DEFAULT_USER_ID;
+  const authUrl = getGitHubAuthUrl(userId);
+  res.redirect(authUrl);
+});
+
+// GitHub OAuth callback handler
+app.get('/auth/github/callback', async (req: Request, res: Response) => {
+  const { code, error, state } = req.query;
+
+  const userId = (state && typeof state === 'string') ? state : DEFAULT_USER_ID;
+  console.log(`GitHub OAuth callback for user: ${userId}`);
+
+  const renderPage = (success: boolean, message: string, username?: string) => {
+    const bgColor = success ? '#238636' : '#ef4444';
+    const icon = success ? '✓' : '✕';
+    return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${success ? 'GitHub Connected!' : 'Error'}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+      color: white;
+    }
+    .container {
+      text-align: center;
+      padding: 3rem;
+      max-width: 400px;
+    }
+    .icon {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: ${bgColor};
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 1.5rem;
+      font-size: 2.5rem;
+    }
+    h1 { font-size: 1.75rem; margin-bottom: 0.5rem; }
+    .username { color: #238636; font-weight: 600; margin-bottom: 1rem; }
+    p { color: #8b949e; line-height: 1.6; margin-bottom: 1.5rem; }
+    .btn {
+      display: inline-block;
+      background: #238636;
+      color: white;
+      padding: 0.75rem 2rem;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #2ea043; }
+    .note { font-size: 0.875rem; color: #6e7681; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">${icon}</div>
+    <h1>${success ? 'GitHub Connected!' : 'Connection Failed'}</h1>
+    ${username ? `<p class="username">@${username}</p>` : ''}
+    <p>${message}</p>
+    <a href="https://chatgpt.com" class="btn">Return to ChatGPT</a>
+    <p class="note">This tab will close automatically...</p>
+  </div>
+  <script>
+    setTimeout(() => {
+      window.close();
+    }, 2000);
+  </script>
+</body>
+</html>`;
+  };
+
+  if (error) {
+    console.error('GitHub OAuth error:', error);
+    return res.send(renderPage(false, 'GitHub authorization was denied or failed. Please try again.'));
+  }
+
+  if (!code || typeof code !== 'string') {
+    return res.send(renderPage(false, 'No authorization code received. Please try again.'));
+  }
+
+  try {
+    const { user } = await handleGitHubOAuthCallback(code, userId);
+    console.log(`Successfully authenticated GitHub user: @${user.login}`);
+
+    res.send(renderPage(
+      true,
+      'You can now return to ChatGPT.',
+      user.login
+    ));
+  } catch (err: any) {
+    console.error('GitHub OAuth callback error:', err);
+    res.send(renderPage(false, `Authentication failed: ${err.message}`));
+  }
+});
+
+// GitHub Logout
+app.post('/auth/github/logout', (_req: Request, res: Response) => {
+  const userId = DEFAULT_USER_ID;
+  deleteGitHubTokens(userId);
+  res.json({ success: true, message: 'GitHub logged out successfully' });
 });
 
 // ============================================
