@@ -299,9 +299,9 @@ function getTools(): AppsTool[] {
       },
     },
     {
-      name: 'get_github_profile',
-      title: 'Get GitHub Profile',
-      description: 'Get the current user\'s own GitHub profile. This tool takes NO parameters - just call it directly. It will automatically check if the user has connected their GitHub account and prompt for authentication if needed. Do NOT ask the user for a username - this tool fetches THEIR OWN profile after they authenticate with GitHub OAuth.',
+      name: 'connect_my_github',
+      title: 'Connect My GitHub',
+      description: 'Connect and authenticate the user\'s GitHub account via OAuth. This tool takes NO parameters - just call it directly. It will check if the user has linked their GitHub account and prompt for OAuth authentication if needed. After connecting, returns the user\'s GitHub profile. Do NOT ask for a username - this uses OAuth to access THEIR OWN account.',
       inputSchema: {
         type: 'object',
         properties: {},
@@ -736,7 +736,7 @@ export function createMCPServer(): Server {
       case 'check_github_auth_status':
         return handleCheckGitHubAuthStatus(userId) as unknown as CallToolResult;
 
-      case 'get_github_profile':
+      case 'connect_my_github':
         return handleGetGitHubProfile(userId) as unknown as CallToolResult;
 
       default:
@@ -910,7 +910,7 @@ export async function handleMCPRequest(
         case 'check_github_auth_status':
           return handleCheckGitHubAuthStatus(toolUserId);
 
-        case 'get_github_profile':
+        case 'connect_my_github':
           return handleGetGitHubProfile(toolUserId);
 
         default:
