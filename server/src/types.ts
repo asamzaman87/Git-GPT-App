@@ -99,6 +99,49 @@ export interface ListPullRequestsResult {
   totalCount: number;
 }
 
+// PR Context Types (for code review)
+export interface FileChange {
+  filename: string;
+  status: 'added' | 'removed' | 'modified' | 'renamed' | 'copied' | 'changed' | 'unchanged';
+  additions: number;
+  deletions: number;
+  changes: number;
+  patch?: string;  // Unified diff
+  previous_filename?: string;  // For renamed files
+}
+
+export interface PullRequestContext {
+  pr: {
+    id: number;
+    number: number;
+    title: string;
+    state: 'open' | 'closed' | 'merged';
+    author: string;
+    repository: {
+      owner: string;
+      name: string;
+      fullName: string;
+    };
+    updatedAt: string;
+    createdAt: string;
+    htmlUrl: string;
+    headSha: string;
+    baseSha: string;
+  };
+  description: string;
+  files: FileChange[];
+  commits: number;
+  baseRef: string;
+  headRef: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  mergeable?: boolean;
+  mergeableState?: string;
+  labels: Array<{ name: string; color: string }>;
+  reviewers: Array<{ login: string; avatar_url: string }>;
+}
+
 // Calendar Event Types
 export interface CalendarAttendee {
   email: string;

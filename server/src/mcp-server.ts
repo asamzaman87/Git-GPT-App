@@ -18,7 +18,8 @@ import {
   getGitHubAuthUrl,
   getGitHubUser,
 } from './github-auth.js';
-import { listPullRequests } from './github-api.js';
+import { listPullRequests, getPullRequestContext } from './github-api.js';
+import type { PullRequestContext } from './types.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -64,6 +65,21 @@ function getWidgetResources(): WidgetResource[] {
           connect_domains: ['https://chatgpt.com', baseUrl, 'https://accounts.google.com'],
           resource_domains: [baseUrl, 'https://*.oaistatic.com'],
           redirect_domains: ['https://accounts.google.com'],
+        },
+      },
+    },
+    // PR Context widget for code review
+    {
+      uri: 'ui://widget/pr-context-widget.html',
+      name: 'PR Context Widget',
+      mimeType: 'text/html+skybridge',
+      _meta: {
+        'openai/widgetPrefersBorder': true,
+        'openai/widgetDomain': 'https://chatgpt.com',
+        'openai/widgetCSP': {
+          connect_domains: ['https://chatgpt.com', baseUrl, 'https://github.com', 'https://api.github.com'],
+          resource_domains: [baseUrl, 'https://*.oaistatic.com', 'https://github.com'],
+          redirect_domains: ['https://github.com'],
         },
       },
     },
@@ -346,6 +362,54 @@ The tool requires GitHub authentication - it will prompt to connect if needed.`,
         'openai/outputTemplate': 'ui://widget/calendar-widget.html',
         'openai/visibility': 'public',
         'openai/widgetAccessible': true,
+      },
+    },
+    {
+      name: 'get_pr_context',
+      title: 'Get Pull Request Context',
+      description: `Get full context for a specific pull request including description, file changes, and unified diffs.
+
+**Use this when:**
+- User asks to review a specific PR (e.g., "Can you review PR #123?")
+- User selects a PR from a list for detailed review
+- User wants to see what changed in a PR
+
+**PR Identifier Formats:**
+- Full format: "owner/repo#123" (e.g., "facebook/react#12345")
+- Simple format: "pr-123" or "#123" or just "123" (searches user's recent PRs)
+
+**Returns:**
+- PR metadata (title, author, description, branches)
+- List of changed files with additions/deletions
+- Unified diffs for each file (for inline comment placement)
+- Labels and requested reviewers
+
+The tool requires GitHub authentication - it will prompt to connect if needed.`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          pr_name: {
+            type: 'string',
+            description: 'PR identifier. Use "owner/repo#123" format for specific PRs, or "pr-123", "#123", or just "123" to search user\'s recent PRs.',
+          },
+        },
+        required: ['pr_name'],
+        additionalProperties: false,
+      },
+      annotations: {
+        title: 'Get Pull Request Context',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      securitySchemes: [
+        { type: 'oauth2', scopes: ['read:user', 'read:org'] },
+      ],
+      _meta: {
+        'openai/visibility': 'public',
+        'openai/outputTemplate': 'ui://widget/pr-context-widget.html',
+        'openai/widgetAccessible': false,
       },
     },
   ];
@@ -699,6 +763,82 @@ async function handleListPullRequests(
 }
 
 /**
+ * Handle get_pr_context tool
+ */
+async function handleGetPRContext(
+  args: { pr_name: string },
+  userId: string
+): Promise<AppsToolResponse> {
+  // Check authentication first
+  if (!isGitHubAuthenticated(userId)) {
+    const authUrl = getGitHubAuthUrl(userId);
+    return {
+      content: [{ type: 'text', text: 'User needs to connect their GitHub account first.' }],
+      structuredContent: {
+        authRequired: true,
+        authType: 'github',
+        authUrl,
+      },
+      _meta: {
+        'openai/outputTemplate': 'ui://widget/calendar-widget.html',
+      },
+      isError: false,
+    };
+  }
+
+  if (!args.pr_name || typeof args.pr_name !== 'string') {
+    return {
+      content: [{ type: 'text', text: 'Error: pr_name parameter is required (e.g., "owner/repo#123" or "pr-123")' }],
+      structuredContent: { error: 'pr_name parameter is required' },
+      isError: true,
+    };
+  }
+
+  try {
+    const context = await getPullRequestContext(userId, args.pr_name);
+
+    // Build a text summary for the content
+    const filesChangedSummary = context.files.slice(0, 5).map((f) => {
+      const status = f.status === 'added' ? '➕' : f.status === 'removed' ? '➖' : '📝';
+      return `${status} ${f.filename} (+${f.additions}/-${f.deletions})`;
+    }).join('\n');
+
+    const moreFiles = context.files.length > 5 ? `\n... and ${context.files.length - 5} more files` : '';
+
+    const textSummary = `**${context.pr.title}** (#${context.pr.number})
+
+**Repository:** ${context.pr.repository.fullName}
+**Author:** @${context.pr.author}
+**State:** ${context.pr.state}
+**Branches:** ${context.headRef} → ${context.baseRef}
+
+**Changes:** ${context.changedFiles} files (+${context.additions}/-${context.deletions})
+
+**Files:**
+${filesChangedSummary}${moreFiles}
+
+${context.description ? `**Description:**\n${context.description.slice(0, 500)}${context.description.length > 500 ? '...' : ''}` : ''}`;
+
+    return {
+      content: [{ type: 'text', text: textSummary }],
+      structuredContent: {
+        prContext: context,
+      },
+      _meta: {
+        'openai/outputTemplate': 'ui://widget/pr-context-widget.html',
+      },
+      isError: false,
+    };
+  } catch (error: any) {
+    return {
+      content: [{ type: 'text', text: `Error fetching PR context: ${error.message}` }],
+      structuredContent: { error: error.message },
+      isError: true,
+    };
+  }
+}
+
+/**
  * Handle check_github_auth_status tool (now PUBLIC)
  */
 function handleCheckGitHubAuthStatus(userId: string): AppsToolResponse {
@@ -817,6 +957,12 @@ export function createMCPServer(): Server {
       case 'list_pull_requests':
         return await handleListPullRequests(
           args as { username?: string },
+          userId
+        ) as unknown as CallToolResult;
+
+      case 'get_pr_context':
+        return await handleGetPRContext(
+          args as { pr_name: string },
           userId
         ) as unknown as CallToolResult;
 
@@ -994,6 +1140,12 @@ export async function handleMCPRequest(
         case 'list_pull_requests':
           return await handleListPullRequests(
             args as { username?: string },
+            toolUserId
+          );
+
+        case 'get_pr_context':
+          return await handleGetPRContext(
+            args as { pr_name: string },
             toolUserId
           );
 
