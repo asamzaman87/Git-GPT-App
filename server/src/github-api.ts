@@ -2,6 +2,8 @@ import {
   GitHubPullRequest,
   GitHubTeam,
   ListPullRequestsResult,
+  PullRequestContext,
+  FileChange,
 } from "./types.js";
 import { getGitHubTokens } from "./token-store.js";
 
@@ -258,4 +260,288 @@ export async function listPullRequests(
 export function hasGitHubAuth(userId: string): boolean {
   const storedData = getGitHubTokens(userId);
   return !!storedData?.tokens?.access_token;
+}
+
+// ============================================
+// PR Context Cache (in-memory with TTL)
+// ============================================
+
+interface CacheEntry<T> {
+  data: T;
+  expiresAt: number;
+}
+
+const prContextCache = new Map<string, CacheEntry<PullRequestContext>>();
+const PR_CONTEXT_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+function getCachedPRContext(cacheKey: string): PullRequestContext | null {
+  const entry = prContextCache.get(cacheKey);
+  if (!entry) return null;
+
+  if (Date.now() > entry.expiresAt) {
+    prContextCache.delete(cacheKey);
+    return null;
+  }
+
+  console.log(`[Cache] PR context cache hit for ${cacheKey}`);
+  return entry.data;
+}
+
+function setCachedPRContext(cacheKey: string, data: PullRequestContext): void {
+  prContextCache.set(cacheKey, {
+    data,
+    expiresAt: Date.now() + PR_CONTEXT_CACHE_TTL,
+  });
+  console.log(`[Cache] PR context cached for ${cacheKey} (TTL: ${PR_CONTEXT_CACHE_TTL / 1000}s)`);
+}
+
+// Clean up expired entries periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of prContextCache.entries()) {
+    if (now > entry.expiresAt) {
+      prContextCache.delete(key);
+    }
+  }
+}, 60 * 1000); // Every minute
+
+// ============================================
+// PR Identifier Parsing
+// ============================================
+
+interface ParsedPRIdentifier {
+  owner: string;
+  repo: string;
+  prNumber: number;
+}
+
+/**
+ * Parse a PR identifier in various formats:
+ * - "owner/repo#123" (full format)
+ * - "pr-123" (simple format - requires recent PR lookup)
+ * - "#123" (requires context)
+ * - "123" (just number)
+ */
+function parsePRIdentifier(prName: string): ParsedPRIdentifier | null {
+  const trimmed = prName.trim().toLowerCase();
+
+  // Format: owner/repo#123
+  const fullMatch = trimmed.match(/^([^/]+)\/([^#]+)#(\d+)$/);
+  if (fullMatch) {
+    return {
+      owner: fullMatch[1],
+      repo: fullMatch[2],
+      prNumber: parseInt(fullMatch[3], 10),
+    };
+  }
+
+  // Format: pr-123 (simple format - not supported without context)
+  const simpleMatch = trimmed.match(/^pr-?(\d+)$/i);
+  if (simpleMatch) {
+    return null; // Will need to search recent PRs
+  }
+
+  // Format: #123 or just 123
+  const numberMatch = trimmed.match(/^#?(\d+)$/);
+  if (numberMatch) {
+    return null; // Will need context
+  }
+
+  return null;
+}
+
+/**
+ * Search for a PR by number across user's recent PRs
+ */
+async function findPRByNumber(
+  accessToken: string,
+  prNumber: number,
+  username: string
+): Promise<{ owner: string; repo: string } | null> {
+  // Search in user's authored PRs and review requests
+  const queries = [
+    `author:${username} is:pr`,
+    `review-requested:${username} is:pr`,
+    `involves:${username} is:pr`,
+  ];
+
+  for (const query of queries) {
+    try {
+      const searchQuery = encodeURIComponent(`${query}`);
+      const result = await githubRequest<{
+        items: Array<{
+          number: number;
+          repository_url: string;
+        }>;
+      }>(accessToken, `/search/issues?q=${searchQuery}&sort=updated&order=desc&per_page=50`);
+
+      for (const item of result.items) {
+        if (item.number === prNumber) {
+          const repoMatch = item.repository_url.match(/repos\/([^/]+)\/([^/]+)$/);
+          if (repoMatch) {
+            return { owner: repoMatch[1], repo: repoMatch[2] };
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`Error searching for PR ${prNumber}:`, error);
+    }
+  }
+
+  return null;
+}
+
+// ============================================
+// Get Pull Request Context
+// ============================================
+
+/**
+ * Get full context for a pull request including files and diffs.
+ * Supports multiple PR identifier formats.
+ */
+export async function getPullRequestContext(
+  userId: string,
+  prName: string
+): Promise<PullRequestContext> {
+  const storedData = getGitHubTokens(userId);
+
+  if (!storedData?.tokens?.access_token) {
+    throw new Error("Not authenticated with GitHub");
+  }
+
+  const accessToken = storedData.tokens.access_token;
+  const username = storedData.user?.login;
+
+  // Parse PR identifier
+  let parsed = parsePRIdentifier(prName);
+
+  // If simple format (pr-123), try to find the PR
+  if (!parsed) {
+    const numberMatch = prName.match(/(\d+)/);
+    if (numberMatch && username) {
+      const prNumber = parseInt(numberMatch[1], 10);
+      const found = await findPRByNumber(accessToken, prNumber, username);
+      if (found) {
+        parsed = { ...found, prNumber };
+      }
+    }
+  }
+
+  if (!parsed) {
+    throw new Error(
+      `Invalid PR identifier format: "${prName}". Use format like "owner/repo#123" or "pr-123".`
+    );
+  }
+
+  const { owner, repo, prNumber } = parsed;
+  const cacheKey = `${userId}:${owner}/${repo}#${prNumber}`;
+
+  // Check cache first
+  const cached = getCachedPRContext(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  console.log(`[GitHub] Fetching PR context for ${owner}/${repo}#${prNumber}`);
+
+  // Fetch PR details
+  const prData = await githubRequest<{
+    id: number;
+    number: number;
+    title: string;
+    state: string;
+    body: string | null;
+    html_url: string;
+    created_at: string;
+    updated_at: string;
+    merged_at: string | null;
+    head: {
+      sha: string;
+      ref: string;
+    };
+    base: {
+      sha: string;
+      ref: string;
+    };
+    user: {
+      login: string;
+    };
+    commits: number;
+    additions: number;
+    deletions: number;
+    changed_files: number;
+    mergeable: boolean | null;
+    mergeable_state: string;
+    labels: Array<{ name: string; color: string }>;
+    requested_reviewers: Array<{ login: string; avatar_url: string }>;
+  }>(accessToken, `/repos/${owner}/${repo}/pulls/${prNumber}`);
+
+  // Fetch changed files with patches
+  const filesData = await githubRequest<Array<{
+    sha: string;
+    filename: string;
+    status: string;
+    additions: number;
+    deletions: number;
+    changes: number;
+    patch?: string;
+    previous_filename?: string;
+  }>>(accessToken, `/repos/${owner}/${repo}/pulls/${prNumber}/files?per_page=100`);
+
+  // Build file changes with patches
+  const files: FileChange[] = filesData.map((file) => ({
+    filename: file.filename,
+    status: file.status as FileChange['status'],
+    additions: file.additions,
+    deletions: file.deletions,
+    changes: file.changes,
+    patch: file.patch,
+    previous_filename: file.previous_filename,
+  }));
+
+  // Determine state
+  let state: 'open' | 'closed' | 'merged' = prData.state as 'open' | 'closed';
+  if (prData.merged_at) {
+    state = 'merged';
+  }
+
+  const context: PullRequestContext = {
+    pr: {
+      id: prData.id,
+      number: prData.number,
+      title: prData.title,
+      state,
+      author: prData.user.login,
+      repository: {
+        owner,
+        name: repo,
+        fullName: `${owner}/${repo}`,
+      },
+      updatedAt: prData.updated_at,
+      createdAt: prData.created_at,
+      htmlUrl: prData.html_url,
+      headSha: prData.head.sha,
+      baseSha: prData.base.sha,
+    },
+    description: prData.body || '',
+    files,
+    commits: prData.commits,
+    baseRef: prData.base.ref,
+    headRef: prData.head.ref,
+    additions: prData.additions,
+    deletions: prData.deletions,
+    changedFiles: prData.changed_files,
+    mergeable: prData.mergeable ?? undefined,
+    mergeableState: prData.mergeable_state,
+    labels: prData.labels.map((l) => ({ name: l.name, color: l.color })),
+    reviewers: prData.requested_reviewers.map((r) => ({
+      login: r.login,
+      avatar_url: r.avatar_url,
+    })),
+  };
+
+  // Cache the result
+  setCachedPRContext(cacheKey, context);
+
+  return context;
 }
