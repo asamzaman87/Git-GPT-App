@@ -119,12 +119,16 @@ function WidgetRouter({ initialData }: { initialData: unknown }) {
     return authData;
   })();
 
+  const handleBackToPRs = () => {
+    navigate('/prs');
+  };
+
   return (
     <Routes>
       <Route path="/" element={<AuthView initialAuthData={initialAuthData} />} />
       <Route path="/invites" element={<InvitesView />} />
       <Route path="/prs" element={<PRsView />} />
-      <Route path="/pr-context" element={<PRContextView initialData={prContextData ? { prContext: prContextData } : undefined} />} />
+      <Route path="/pr-context" element={<PRContextView initialData={prContextData ? { prContext: prContextData } : undefined} onBack={handleBackToPRs} />} />
     </Routes>
   );
 }
