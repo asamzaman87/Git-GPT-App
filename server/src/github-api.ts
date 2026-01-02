@@ -4,7 +4,11 @@ import {
   ListPullRequestsResult,
   PullRequestContext,
   FileChange,
+  ReviewComment,
+  PostReviewResponse,
 } from "./types.js";
+import { idempotencyService } from "./idempotency-service.js";
+import crypto from "crypto";
 import { getGitHubTokens } from "./token-store.js";
 
 const GITHUB_API_BASE = "https://api.github.com";
@@ -544,4 +548,160 @@ export async function getPullRequestContext(
   setCachedPRContext(cacheKey, context);
 
   return context;
+}
+
+// ============================================
+// Post Review Comments
+// ============================================
+
+/**
+ * Post review comments to a pull request.
+ * Supports inline comments (with path + line) and general comments.
+ * Includes idempotency protection to prevent duplicate posts on retries.
+ */
+export async function postReviewComments(
+  userId: string,
+  prName: string,
+  comments: ReviewComment[],
+  event: "COMMENT" | "APPROVE" | "REQUEST_CHANGES" = "COMMENT",
+  idempotencyKey: string
+): Promise<PostReviewResponse> {
+  const storedData = getGitHubTokens(userId);
+
+  if (!storedData?.tokens?.access_token) {
+    throw new Error("Not authenticated with GitHub");
+  }
+
+  const accessToken = storedData.tokens.access_token;
+
+  // Generate payload hash for content-based deduplication
+  const normalizeComment = (c: ReviewComment) => ({
+    body: String(c?.body || "").trim(),
+    path: c?.path ? String(c.path) : undefined,
+    line: typeof c?.line === "number" ? c.line : undefined,
+    side: c?.side ? String(c.side) : undefined,
+  });
+
+  const payload = {
+    prName: String(prName || "").trim(),
+    event,
+    comments: Array.isArray(comments) ? comments.map(normalizeComment) : [],
+  };
+
+  const payloadHash = crypto
+    .createHash("sha256")
+    .update(JSON.stringify(payload))
+    .digest("hex");
+
+  const payloadKey = idempotencyService.generateKey(
+    userId,
+    prName,
+    `payload:${payloadHash}`
+  );
+
+  // Check if this exact payload was already processed
+  if (idempotencyService.isProcessed(payloadKey)) {
+    const cached = idempotencyService.getResult<PostReviewResponse>(payloadKey);
+    if (cached) {
+      console.log(`[Idempotency] Returning cached result for payload hash`);
+      return cached;
+    }
+  }
+
+  // Check if this idempotency key was already processed
+  const idempKey = idempotencyService.generateKey(userId, prName, idempotencyKey);
+
+  if (idempotencyService.isProcessed(idempKey)) {
+    const cached = idempotencyService.getResult<PostReviewResponse>(idempKey);
+    if (cached) {
+      console.log(`[Idempotency] Returning cached result for idempotency key`);
+      return cached;
+    }
+  }
+
+  // Parse PR identifier
+  let parsed = parsePRIdentifier(prName);
+
+  if (!parsed) {
+    const numberMatch = prName.match(/(\d+)/);
+    const username = storedData.user?.login;
+    if (numberMatch && username) {
+      const prNumber = parseInt(numberMatch[1], 10);
+      const found = await findPRByNumber(accessToken, prNumber, username);
+      if (found) {
+        parsed = { ...found, prNumber };
+      }
+    }
+  }
+
+  if (!parsed) {
+    throw new Error(
+      `Invalid PR identifier format: "${prName}". Use format like "owner/repo#123".`
+    );
+  }
+
+  const { owner, repo, prNumber } = parsed;
+
+  // Separate inline comments from general comments
+  const inlineComments = comments.filter((c) => c.path && c.line);
+  const generalComments = comments.filter((c) => !c.path || !c.line);
+
+  // Build review body from general comments
+  const reviewBody = generalComments
+    .map((c) => c.body)
+    .filter(Boolean)
+    .join("\n\n");
+
+  // Determine if we should create a review
+  const shouldCreateReview =
+    inlineComments.length > 0 || event !== "COMMENT" || Boolean(reviewBody);
+
+  let reviewId: number | undefined;
+
+  if (shouldCreateReview) {
+    // Format inline comments for GitHub API
+    const reviewComments = inlineComments.map((comment) => ({
+      path: comment.path!,
+      line: comment.line!,
+      side: comment.side || "RIGHT",
+      body: comment.body,
+    }));
+
+    // Create the review
+    const reviewData = await githubRequest<{ id: number }>(
+      accessToken,
+      `/repos/${owner}/${repo}/pulls/${prNumber}/reviews`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event,
+          body: reviewBody || undefined,
+          comments: reviewComments.length > 0 ? reviewComments : undefined,
+        }),
+      }
+    );
+
+    reviewId = reviewData.id;
+  }
+
+  // Fetch PR URL
+  const prData = await githubRequest<{ html_url: string }>(
+    accessToken,
+    `/repos/${owner}/${repo}/pulls/${prNumber}`
+  );
+
+  const response: PostReviewResponse = {
+    success: true,
+    reviewId,
+    prUrl: prData.html_url,
+    commentsPosted: comments.length,
+    message: `Successfully posted ${comments.length} comment(s) to PR #${prNumber}`,
+  };
+
+  // Mark as processed for both keys
+  idempotencyService.markProcessed(idempKey, response);
+  idempotencyService.markProcessed(payloadKey, response);
+
+  return response;
 }
