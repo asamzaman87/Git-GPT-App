@@ -416,22 +416,20 @@ The tool requires GitHub authentication - it will prompt to connect if needed.`,
     {
       name: 'post_review_comments',
       title: 'Post Review Comments',
-      description: `Post review comments to a GitHub pull request. This tool should ONLY be called after:
-1. You have reviewed the PR using get_pr_context
-2. You have generated review comments
-3. The user has EXPLICITLY approved posting those comments
+      description: `Post review comments to a GitHub pull request.
 
-**Comment Types:**
-- Inline comments: Provide path + line to attach comment to specific code
+**IMPORTANT: Call this tool only ONCE per user request. Do NOT make multiple calls for the same review.**
+
+This tool accepts an ARRAY of comments - put ALL comments (both inline and general) in a single call.
+
+**Comment Types (in the comments array):**
+- Inline comments: Include path + line to attach to specific code
 - General comments: Omit path/line for top-level review comments
 
 **Review Events:**
-- COMMENT (default): Neutral feedback, no approval status
-- APPROVE: Only use if user explicitly says "approve" or "LGTM"
-- REQUEST_CHANGES: Only use if user explicitly requests changes
-
-**Idempotency:**
-Each request requires a unique idempotencyKey to prevent duplicate comments if retried.
+- COMMENT (default): Neutral feedback
+- APPROVE: Only if user explicitly says "approve" or "LGTM"
+- REQUEST_CHANGES: Only if user explicitly requests changes
 
 The tool requires GitHub authentication.`,
       inputSchema: {
