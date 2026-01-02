@@ -215,6 +215,29 @@ export interface RespondToInviteResponse {
   eventSummary?: string;
 }
 
+// Review Comment Types (for posting PR reviews)
+export interface ReviewComment {
+  body: string;
+  path?: string;       // File path for inline comments
+  line?: number;       // Line number for inline comments
+  side?: 'LEFT' | 'RIGHT';  // Side of the diff (LEFT = old, RIGHT = new)
+}
+
+export interface PostReviewRequest {
+  prName: string;
+  comments: ReviewComment[];
+  event?: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
+  idempotencyKey: string;
+}
+
+export interface PostReviewResponse {
+  success: boolean;
+  reviewId?: number;
+  prUrl: string;
+  commentsPosted: number;
+  message: string;
+}
+
 // MCP Types
 export interface MCPToolResult {
   content: {

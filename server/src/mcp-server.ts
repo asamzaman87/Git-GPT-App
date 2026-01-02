@@ -18,7 +18,8 @@ import {
   getGitHubAuthUrl,
   getGitHubUser,
 } from './github-auth.js';
-import { listPullRequests, getPullRequestContext } from './github-api.js';
+import { listPullRequests, getPullRequestContext, postReviewComments } from './github-api.js';
+import type { ReviewComment } from './types.js';
 import type { PullRequestContext } from './types.js';
 import fs from 'fs';
 import path from 'path';
@@ -409,6 +410,90 @@ The tool requires GitHub authentication - it will prompt to connect if needed.`,
       _meta: {
         'openai/visibility': 'public',
         'openai/outputTemplate': 'ui://widget/pr-context-widget.html',
+        'openai/widgetAccessible': false,
+      },
+    },
+    {
+      name: 'post_review_comments',
+      title: 'Post Review Comments',
+      description: `Post review comments to a GitHub pull request. This tool should ONLY be called after:
+1. You have reviewed the PR using get_pr_context
+2. You have generated review comments
+3. The user has EXPLICITLY approved posting those comments
+
+**Comment Types:**
+- Inline comments: Provide path + line to attach comment to specific code
+- General comments: Omit path/line for top-level review comments
+
+**Review Events:**
+- COMMENT (default): Neutral feedback, no approval status
+- APPROVE: Only use if user explicitly says "approve" or "LGTM"
+- REQUEST_CHANGES: Only use if user explicitly requests changes
+
+**Idempotency:**
+Each request requires a unique idempotencyKey to prevent duplicate comments if retried.
+
+The tool requires GitHub authentication.`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          pr_name: {
+            type: 'string',
+            description: 'PR identifier in "owner/repo#123" format.',
+          },
+          comments: {
+            type: 'array',
+            description: 'Array of review comments to post.',
+            items: {
+              type: 'object',
+              properties: {
+                body: {
+                  type: 'string',
+                  description: 'The comment text.',
+                },
+                path: {
+                  type: 'string',
+                  description: 'File path for inline comment (e.g., "src/utils.ts"). Omit for general comments.',
+                },
+                line: {
+                  type: 'number',
+                  description: 'Line number for inline comment. Omit for general comments.',
+                },
+                side: {
+                  type: 'string',
+                  enum: ['LEFT', 'RIGHT'],
+                  description: 'Side of diff: RIGHT (new code, default) or LEFT (old code).',
+                },
+              },
+              required: ['body'],
+              additionalProperties: false,
+            },
+          },
+          event: {
+            type: 'string',
+            enum: ['COMMENT', 'APPROVE', 'REQUEST_CHANGES'],
+            description: 'Review event type. Default is COMMENT. Only use APPROVE or REQUEST_CHANGES if user explicitly requests.',
+          },
+          idempotency_key: {
+            type: 'string',
+            description: 'Unique key to prevent duplicate posts on retry. Generate a unique ID for each review submission.',
+          },
+        },
+        required: ['pr_name', 'comments', 'idempotency_key'],
+        additionalProperties: false,
+      },
+      annotations: {
+        title: 'Post Review Comments',
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      securitySchemes: [
+        { type: 'oauth2', scopes: ['repo'] },
+      ],
+      _meta: {
+        'openai/visibility': 'public',
         'openai/widgetAccessible': false,
       },
     },
@@ -839,6 +924,99 @@ ${context.description ? `**Description:**\n${context.description.slice(0, 500)}$
 }
 
 /**
+ * Handle post_review_comments tool
+ */
+async function handlePostReviewComments(
+  args: {
+    pr_name: string;
+    comments: ReviewComment[];
+    event?: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
+    idempotency_key: string;
+  },
+  userId: string
+): Promise<AppsToolResponse> {
+  // Check authentication first
+  if (!isGitHubAuthenticated(userId)) {
+    const authUrl = getGitHubAuthUrl(userId);
+    return {
+      content: [{ type: 'text', text: 'User needs to connect their GitHub account first.' }],
+      structuredContent: {
+        authRequired: true,
+        authType: 'github',
+        authUrl,
+      },
+      isError: false,
+    };
+  }
+
+  // Validate required parameters
+  if (!args.pr_name || typeof args.pr_name !== 'string') {
+    return {
+      content: [{ type: 'text', text: 'Error: pr_name parameter is required (e.g., "owner/repo#123")' }],
+      structuredContent: { error: 'pr_name parameter is required', success: false },
+      isError: true,
+    };
+  }
+
+  if (!args.comments || !Array.isArray(args.comments) || args.comments.length === 0) {
+    return {
+      content: [{ type: 'text', text: 'Error: comments array is required and must not be empty' }],
+      structuredContent: { error: 'comments array is required', success: false },
+      isError: true,
+    };
+  }
+
+  if (!args.idempotency_key || typeof args.idempotency_key !== 'string') {
+    return {
+      content: [{ type: 'text', text: 'Error: idempotency_key is required to prevent duplicate comments' }],
+      structuredContent: { error: 'idempotency_key is required', success: false },
+      isError: true,
+    };
+  }
+
+  try {
+    const result = await postReviewComments(
+      userId,
+      args.pr_name,
+      args.comments,
+      args.event || 'COMMENT',
+      args.idempotency_key
+    );
+
+    // Build human-readable summary
+    const inlineCount = args.comments.filter(c => c.path && c.line).length;
+    const generalCount = args.comments.length - inlineCount;
+
+    let summary = result.message;
+    if (inlineCount > 0 && generalCount > 0) {
+      summary += ` (${inlineCount} inline, ${generalCount} general)`;
+    } else if (inlineCount > 0) {
+      summary += ` (${inlineCount} inline)`;
+    } else if (generalCount > 0) {
+      summary += ` (${generalCount} general)`;
+    }
+
+    return {
+      content: [{ type: 'text', text: `${summary}\n\nView at: ${result.prUrl}` }],
+      structuredContent: {
+        success: result.success,
+        reviewId: result.reviewId,
+        prUrl: result.prUrl,
+        commentsPosted: result.commentsPosted,
+        message: result.message,
+      },
+      isError: false,
+    };
+  } catch (error: any) {
+    return {
+      content: [{ type: 'text', text: `Error posting review: ${error.message}` }],
+      structuredContent: { error: error.message, success: false },
+      isError: true,
+    };
+  }
+}
+
+/**
  * Handle check_github_auth_status tool (now PUBLIC)
  */
 function handleCheckGitHubAuthStatus(userId: string): AppsToolResponse {
@@ -963,6 +1141,17 @@ export function createMCPServer(): Server {
       case 'get_pr_context':
         return await handleGetPRContext(
           args as { pr_name: string },
+          userId
+        ) as unknown as CallToolResult;
+
+      case 'post_review_comments':
+        return await handlePostReviewComments(
+          args as {
+            pr_name: string;
+            comments: ReviewComment[];
+            event?: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
+            idempotency_key: string;
+          },
           userId
         ) as unknown as CallToolResult;
 
@@ -1146,6 +1335,17 @@ export async function handleMCPRequest(
         case 'get_pr_context':
           return await handleGetPRContext(
             args as { pr_name: string },
+            toolUserId
+          );
+
+        case 'post_review_comments':
+          return await handlePostReviewComments(
+            args as {
+              pr_name: string;
+              comments: ReviewComment[];
+              event?: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
+              idempotency_key: string;
+            },
             toolUserId
           );
 
