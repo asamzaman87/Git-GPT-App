@@ -16,9 +16,8 @@ export default defineConfig({
     minify: 'esbuild',
     rollupOptions: {
       input: {
-        'pending-invites': resolve(__dirname, 'pending-invites.html'),
-        'auth-status': resolve(__dirname, 'auth-status.html'),
-        'respond-result': resolve(__dirname, 'respond-result.html'),
+        'github-widget': resolve(__dirname, 'github-widget.html'),
+        'pr-context-widget': resolve(__dirname, 'pr-context-widget.html'),
       },
     },
   },

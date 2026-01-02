@@ -4,22 +4,13 @@ import { Badge } from '@openai/apps-sdk-ui/components/Badge';
 import { Check } from '@openai/apps-sdk-ui/components/Icon';
 import { useWidget } from '../WidgetContext';
 import { theme } from '../theme';
-import type { AuthStatusOutput, AuthType, PullRequestsOutput } from '../types';
+import type { AuthStatusOutput, PullRequestsOutput } from '../types';
 
 // GitHub Icon Component
 function GitHubIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="currentColor">
       <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-    </svg>
-  );
-}
-
-// Google Calendar Icon Component
-function CalendarIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11zM9 11H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2zm-8 4H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2z"/>
     </svg>
   );
 }
@@ -36,10 +27,6 @@ export function AuthView({ initialAuthData }: AuthViewProps) {
 
   const currentAuth = authData || initialAuthData;
   const isAuthenticated = currentAuth?.authenticated ?? false;
-
-  // Determine auth type from data (default to calendar for backward compatibility)
-  const authType: AuthType = currentAuth?.authType || 'calendar';
-  const isGitHub = authType === 'github';
 
   useEffect(() => { notifyHeight(); }, [isAuthenticated, isPolling, isLoadingPRs, notifyHeight]);
 
@@ -60,22 +47,16 @@ export function AuthView({ initialAuthData }: AuthViewProps) {
     }
   };
 
-  // Polling for auth status - uses different tool based on auth type
+  // Polling for auth status
   useEffect(() => {
     if (!isPolling) return;
 
-    const pollTool = isGitHub ? 'check_github_auth_status' : 'check_auth_status';
-
     const pollInterval = setInterval(async () => {
       try {
-        const result = await callTool(pollTool, {}) as { structuredContent?: AuthStatusOutput };
+        const result = await callTool('check_github_auth_status', {}) as { structuredContent?: AuthStatusOutput };
         if (result?.structuredContent?.authenticated) {
           setAuthData(result.structuredContent);
-          if (isGitHub) {
-            setWidgetState({ authenticated: true, authType: 'github', user: result.structuredContent.user });
-          } else {
-            setWidgetState({ authenticated: true, authType: 'calendar', email: result.structuredContent.email });
-          }
+          setWidgetState({ authenticated: true, user: result.structuredContent.user });
           setIsPolling(false);
         }
       } catch (err) {
@@ -89,7 +70,7 @@ export function AuthView({ initialAuthData }: AuthViewProps) {
       clearInterval(pollInterval);
       clearTimeout(timeout);
     };
-  }, [isPolling, callTool, setWidgetState, setAuthData, isGitHub]);
+  }, [isPolling, callTool, setWidgetState, setAuthData]);
 
   const handleConnect = () => {
     if (currentAuth?.authUrl) {
@@ -98,41 +79,24 @@ export function AuthView({ initialAuthData }: AuthViewProps) {
     }
   };
 
-  // Brand configuration based on auth type
-  const brand = isGitHub ? {
+  // Brand configuration for GitHub
+  const brand = {
     name: 'GitHub',
-    icon: GitHubIcon,
     buttonBg: 'bg-[#24292f] hover:bg-[#32383f]',
     iconBg: isDark ? 'bg-[#238636] shadow-green-600/25' : 'bg-[#238636] shadow-green-500/25',
     spinnerBorder: 'border-t-[#238636]',
     connectText: 'Continue with GitHub',
     connectedText: 'GitHub linked',
-    description: 'Link your GitHub account to access your profile from ChatGPT',
+    description: 'Link your GitHub account to review pull requests from ChatGPT',
     waitingTitle: 'Waiting for Sign In...',
     connectTitle: 'Connect GitHub',
     setupTitle: 'Setting Up GitHub Access',
-    privacyText: 'We only access your basic profile information. Your data is encrypted and never shared with third parties.',
-  } : {
-    name: 'Google Calendar',
-    icon: CalendarIcon,
-    buttonBg: 'bg-[#4285f4] hover:bg-[#3367d6]',
-    iconBg: isDark ? 'bg-[#4285f4] shadow-blue-600/25' : 'bg-[#4285f4] shadow-blue-500/25',
-    spinnerBorder: 'border-t-[#4285f4]',
-    connectText: 'Continue with Google',
-    connectedText: 'Calendar linked',
-    description: 'Link your Google account to manage calendar invitations from ChatGPT',
-    waitingTitle: 'Waiting for Sign In...',
-    connectTitle: 'Connect Google Calendar',
-    setupTitle: 'Setting Up Calendar Access',
-    privacyText: 'We only access your calendar invitations. Your data is encrypted and never shared with third parties.',
+    privacyText: 'We only access your basic profile and repository information. Your data is encrypted and never shared with third parties.',
   };
-
-  const BrandIcon = brand.icon;
 
   // Connected State
   if (isAuthenticated) {
     const user = currentAuth?.user;
-    const email = currentAuth?.email;
 
     return (
       <div className={`rounded-2xl shadow-lg border p-8 relative overflow-hidden ${theme.card(isDark)}`}>
@@ -149,41 +113,39 @@ export function AuthView({ initialAuthData }: AuthViewProps) {
           <Badge className='p-6 rounded-full' color="success">Active</Badge>
         </div>
 
-        {/* GitHub: show @username, Calendar: show email */}
-        {(isGitHub ? user?.login : email) && (
+        {/* Show @username */}
+        {user?.login && (
           <div className={`p-4 rounded-xl border ${theme.card(isDark)}`}>
             <p className={`text-xs uppercase tracking-wide font-medium mb-1 ${theme.textPrimary(isDark)}`}>Signed in as</p>
             <div className="flex items-center gap-2">
-              <BrandIcon className="w-4 h-4" />
+              <GitHubIcon className="w-4 h-4" />
               <p className={`text-sm font-medium ${theme.textPrimary(isDark)}`}>
-                {isGitHub ? `@${user?.login}` : email}
+                @{user.login}
               </p>
             </div>
           </div>
         )}
 
-        {/* GitHub-specific: List PRs button */}
-        {isGitHub && (
-          <button
-            onClick={handleListPRs}
-            disabled={isLoadingPRs}
-            className={`mt-4 w-full h-12 flex items-center justify-center gap-3 font-medium rounded-xl ${brand.buttonBg} text-white transition-colors disabled:opacity-50`}
-          >
-            {isLoadingPRs ? (
-              <>
-                <div className={`size-5 rounded-full border-2 border-t-white animate-spin border-white/30`} />
-                Loading PRs...
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 16 16">
-                  <path d="M7.177 3.073L9.573.677A.25.25 0 0110 .854v4.792a.25.25 0 01-.427.177L7.177 3.427a.25.25 0 010-.354zM3.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122v5.256a2.251 2.251 0 11-1.5 0V5.372A2.25 2.25 0 011.5 3.25zM11 2.5h-1V4h1a1 1 0 011 1v5.628a2.251 2.251 0 101.5 0V5A2.5 2.5 0 0011 2.5zm1 10.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM3.75 12a.75.75 0 100 1.5.75.75 0 000-1.5z"/>
-                </svg>
-                List Pull Requests
-              </>
-            )}
-          </button>
-        )}
+        {/* List PRs button */}
+        <button
+          onClick={handleListPRs}
+          disabled={isLoadingPRs}
+          className={`mt-4 w-full h-12 flex items-center justify-center gap-3 font-medium rounded-xl ${brand.buttonBg} text-white transition-colors disabled:opacity-50`}
+        >
+          {isLoadingPRs ? (
+            <>
+              <div className={`size-5 rounded-full border-2 border-t-white animate-spin border-white/30`} />
+              Loading PRs...
+            </>
+          ) : (
+            <>
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 16 16">
+                <path d="M7.177 3.073L9.573.677A.25.25 0 0110 .854v4.792a.25.25 0 01-.427.177L7.177 3.427a.25.25 0 010-.354zM3.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122v5.256a2.251 2.251 0 11-1.5 0V5.372A2.25 2.25 0 011.5 3.25zM11 2.5h-1V4h1a1 1 0 011 1v5.628a2.251 2.251 0 101.5 0V5A2.5 2.5 0 0011 2.5zm1 10.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM3.75 12a.75.75 0 100 1.5.75.75 0 000-1.5z"/>
+              </svg>
+              List Pull Requests
+            </>
+          )}
+        </button>
       </div>
     );
   }
@@ -195,7 +157,7 @@ export function AuthView({ initialAuthData }: AuthViewProps) {
         {/* Icon Container */}
         <div className="flex justify-center mb-6">
           <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg ${brand.iconBg}`}>
-            <BrandIcon className="w-8 h-8 text-white" />
+            <GitHubIcon className="w-8 h-8 text-white" />
           </div>
         </div>
 
@@ -233,7 +195,7 @@ export function AuthView({ initialAuthData }: AuthViewProps) {
               onClick={handleConnect}
               className={`w-full h-12 flex items-center justify-center gap-3 font-medium rounded-xl text-white ${brand.buttonBg} transition-colors`}
             >
-              <BrandIcon className="w-5 h-5" />
+              <GitHubIcon className="w-5 h-5" />
               {brand.connectText}
             </button>
 

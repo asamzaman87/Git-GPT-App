@@ -1,10 +1,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import CalendarWidget from './CalendarWidget';
+import GitHubWidget from './GitHubWidget';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <CalendarWidget />
+    <GitHubWidget />
   </React.StrictMode>
 );
 

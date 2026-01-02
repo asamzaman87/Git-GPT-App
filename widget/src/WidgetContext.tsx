@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { AuthStatusOutput, PendingInvitesOutput, PullRequestsOutput, PullRequestContext } from './types';
+import type { AuthStatusOutput, PullRequestsOutput, PullRequestContext } from './types';
 
 export interface WidgetContextType {
   theme: 'light' | 'dark';
@@ -10,8 +10,6 @@ export interface WidgetContextType {
   setWidgetState: (state: Record<string, unknown>) => void;
   authData: AuthStatusOutput | null;
   setAuthData: (data: AuthStatusOutput | null) => void;
-  invitesData: PendingInvitesOutput | null;
-  setInvitesData: (data: PendingInvitesOutput | null) => void;
   prsData: PullRequestsOutput | null;
   setPrsData: (data: PullRequestsOutput | null) => void;
   prContextData: PullRequestContext | null;
@@ -25,4 +23,3 @@ export function useWidget() {
   if (!ctx) throw new Error('useWidget must be used within WidgetProvider');
   return ctx;
 }
-

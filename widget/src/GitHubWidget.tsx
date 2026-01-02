@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { useOpenAI } from './useOpenAI';
 import { WidgetContext, useWidget, type WidgetContextType } from './WidgetContext';
-import { AuthView, InvitesView, PRContextView } from './components';
+import { AuthView, PRContextView } from './components';
 import { PRsView } from './components/PRsView';
 import { theme } from './theme';
-import type { AuthStatusOutput, PendingInvitesOutput, PullRequestsOutput, PullRequestContext } from './types';
+import type { AuthStatusOutput, PullRequestsOutput, PullRequestContext } from './types';
 import './main.css';
 
 // ============================================
@@ -14,7 +14,7 @@ import './main.css';
 function WidgetRouter({ initialData }: { initialData: unknown }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { setAuthData, setInvitesData, setPrsData, setPrContextData, prContextData, authData } = useWidget();
+  const { setAuthData, setPrsData, setPrContextData, prContextData, authData } = useWidget();
   const [initialRouteSet, setInitialRouteSet] = useState(false);
 
   useEffect(() => {
@@ -32,7 +32,7 @@ function WidgetRouter({ initialData }: { initialData: unknown }) {
     if ('prContext' in data && data.prContext) {
       console.log('[Widget] Detected PR context data, navigating to /pr-context');
       setPrContextData(data.prContext as PullRequestContext);
-      setAuthData({ authenticated: true, authType: 'github' });
+      setAuthData({ authenticated: true });
       navigate('/pr-context', { replace: true });
       setInitialRouteSet(true);
       return;
@@ -43,29 +43,17 @@ function WidgetRouter({ initialData }: { initialData: unknown }) {
       console.log('[Widget] Detected PRs data, navigating to /prs');
       setPrsData(data as unknown as PullRequestsOutput);
       // Also mark as authenticated since we could fetch PRs
-      setAuthData({ authenticated: true, authType: 'github' });
+      setAuthData({ authenticated: true });
       navigate('/prs', { replace: true });
       setInitialRouteSet(true);
       return;
     }
 
-    // Check if it's invites data (has 'invites' array)
-    if ('invites' in data && Array.isArray(data.invites)) {
-      console.log('[Widget] Detected invites data, navigating to /invites');
-      setInvitesData(data as unknown as PendingInvitesOutput);
-      // Also mark as authenticated since we could fetch invites
-      setAuthData({ authenticated: true });
-      navigate('/invites', { replace: true });
-      setInitialRouteSet(true);
-      return;
-    }
-
-    // Check if auth is required (from get_pending_reservations or get_github_profile when not authenticated)
+    // Check if auth is required
     if ('authRequired' in data && data.authRequired === true) {
-      console.log('[Widget] Detected authRequired, authType:', data.authType, 'showing auth view');
+      console.log('[Widget] Detected authRequired, showing auth view');
       setAuthData({
         authenticated: false,
-        authType: (data.authType as 'calendar' | 'github') || 'calendar',
         authUrl: data.authUrl as string | undefined
       });
       setInitialRouteSet(true);
@@ -74,12 +62,10 @@ function WidgetRouter({ initialData }: { initialData: unknown }) {
 
     // Check if it's auth data (has 'authenticated')
     if ('authenticated' in data) {
-      console.log('[Widget] Detected auth data, authType:', data.authType, 'staying on /');
+      console.log('[Widget] Detected auth data, staying on /');
       setAuthData({
         authenticated: data.authenticated as boolean,
-        authType: (data.authType as 'calendar' | 'github') || 'calendar',
         authUrl: data.authUrl as string | undefined,
-        email: data.email as string | undefined,
         user: data.user as any,
       });
       setInitialRouteSet(true);
@@ -89,18 +75,17 @@ function WidgetRouter({ initialData }: { initialData: unknown }) {
     // Unknown data type, stay on current route
     console.log('[Widget] Unknown data type, staying on current route');
     setInitialRouteSet(true);
-  }, [initialData, initialRouteSet, navigate, setAuthData, setInvitesData, setPrsData]);
+  }, [initialData, initialRouteSet, navigate, setAuthData, setPrsData, setPrContextData]);
 
   // Derive initial auth data for AuthView
   const initialAuthData: AuthStatusOutput | null = (() => {
     if (!initialData) return authData;
     const data = initialData as Record<string, unknown>;
 
-    // Handle authRequired from get_pending_reservations or get_github_profile
+    // Handle authRequired
     if ('authRequired' in data && data.authRequired === true) {
       return {
         authenticated: false,
-        authType: (data.authType as 'calendar' | 'github') || 'calendar',
         authUrl: data.authUrl as string | undefined
       };
     }
@@ -109,9 +94,7 @@ function WidgetRouter({ initialData }: { initialData: unknown }) {
     if ('authenticated' in data) {
       return {
         authenticated: data.authenticated as boolean,
-        authType: (data.authType as 'calendar' | 'github') || 'calendar',
         authUrl: data.authUrl as string | undefined,
-        email: data.email as string | undefined,
         user: data.user as any,
       };
     }
@@ -122,19 +105,17 @@ function WidgetRouter({ initialData }: { initialData: unknown }) {
   return (
     <Routes>
       <Route path="/" element={<AuthView initialAuthData={initialAuthData} />} />
-      <Route path="/invites" element={<InvitesView />} />
       <Route path="/prs" element={<PRsView />} />
       <Route path="/pr-context" element={<PRContextView initialData={prContextData ? { prContext: prContextData } : undefined} />} />
     </Routes>
   );
 }
 
-export default function CalendarWidget() {
+export default function GitHubWidget() {
   const { data, theme: appTheme, isLoading, error, callTool, openExternal, notifyHeight, setWidgetState, openai } = useOpenAI<AuthStatusOutput>();
   const isDark = appTheme === 'dark';
 
   const [authData, setAuthData] = useState<AuthStatusOutput | null>(null);
-  const [invitesData, setInvitesData] = useState<PendingInvitesOutput | null>(null);
   const [prsData, setPrsData] = useState<PullRequestsOutput | null>(null);
   const [prContextData, setPrContextData] = useState<PullRequestContext | null>(null);
 
@@ -145,16 +126,13 @@ export default function CalendarWidget() {
 
     const state = openai?.widgetState as {
       authenticated?: boolean;
-      email?: string;
       view?: string;
-      invites?: PendingInvitesOutput;
       prs?: PullRequestsOutput;
     } | null;
 
     if (state?.authenticated) {
-      setAuthData({ authenticated: true, email: state.email || undefined });
+      setAuthData({ authenticated: true });
     }
-    if (state?.invites) setInvitesData(state.invites);
     if (state?.prs) setPrsData(state.prs);
   }, [openai?.widgetState, data]);
 
@@ -172,8 +150,6 @@ export default function CalendarWidget() {
     setWidgetState,
     authData,
     setAuthData,
-    invitesData,
-    setInvitesData,
     prsData,
     setPrsData,
     prContextData,

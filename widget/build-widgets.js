@@ -6,8 +6,8 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Build both calendar widget and PR context widget
-const widgets = ['calendar-widget', 'pr-context-widget'];
+// Build both GitHub widget and PR context widget
+const widgets = ['github-widget', 'pr-context-widget'];
 
 async function buildWidgets() {
   for (let i = 0; i < widgets.length; i++) {

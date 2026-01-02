@@ -24,7 +24,6 @@ export default function PRContextWidget() {
       console.log('[PRContextWidget] Auth required, showing auth view');
       setAuthData({
         authenticated: false,
-        authType: data.authType || 'github',
         authUrl: data.authUrl,
       });
       return;
@@ -52,8 +51,10 @@ export default function PRContextWidget() {
     setWidgetState,
     authData,
     setAuthData,
-    invitesData: null,
-    setInvitesData: () => {},
+    prsData: null,
+    setPrsData: () => {},
+    prContextData: prContextData?.prContext || null,
+    setPrContextData: () => {},
   };
 
   if (isLoading) {
