@@ -1,17 +1,28 @@
-# ChatGPT Reservations Manager
+# ChatGPT Reservations Manager + GitHub PR Reviewer
 
-A ChatGPT app that helps you manage pending Google Calendar invitations directly from within ChatGPT conversations. Built using OpenAI's Apps SDK with the Model Context Protocol (MCP), featuring multi-user support and a unified React widget interface.
+A ChatGPT app that helps you manage **Google Calendar invitations** and **review GitHub Pull Requests** directly from within ChatGPT conversations. Built using OpenAI's Apps SDK with the Model Context Protocol (MCP), featuring multi-user support and a unified React widget interface.
 
 ## Features
 
+### Calendar Management
 - 🗓️ **View Pending Invitations** - See all calendar invites awaiting your response
 - ✅ **Quick Actions** - Accept, decline, or mark invitations as tentative with one click
 - 💬 **Natural Language** - Interact with your calendar through ChatGPT conversations
-- 🔐 **Secure OAuth 2.1** - Google Calendar authentication with automatic token refresh
+
+### GitHub PR Review
+- 🔗 **Connect GitHub** - OAuth login to connect your GitHub account
+- 📋 **List Pull Requests** - View PRs you authored, need to review, or are involved in
+- 🔍 **Get PR Context** - Full PR details including files changed, diffs, and metadata
+- 💬 **Post Comments** - Add general comments or inline comments on specific files/lines
+- ✅ **Approve PRs** - Approve pull requests with optional comment
+- ❌ **Request Changes** - Request changes with feedback
+- 🛡️ **Idempotency Protection** - Prevents duplicate comments on retries
+
+### Security & Infrastructure
+- 🔐 **Secure OAuth 2.1** - Google Calendar & GitHub authentication with automatic token refresh
 - 🔄 **Refresh Token Support** - Long-lived sessions with automatic token rotation (30 days)
 - 👥 **Multi-User Support** - Each ChatGPT user has their own isolated authentication and data
 - 🎨 **Modern UI** - Beautiful, theme-aware widget with 3D card effects and dark/light mode
-- 🔄 **Real-time Updates** - Refresh invites on-demand with a single click
 - 🚀 **Single-Page Widget** - Unified React Router-based interface for seamless navigation
 - 🛡️ **OAuth 2.1 Compliant** - Full MCP authorization spec with PKCE, refresh tokens, and discovery endpoints
 
@@ -883,6 +894,152 @@ Accept, decline, or mark a calendar invitation as tentative.
 
 ---
 
+### 4. `check_github_auth_status`
+
+Connect and check GitHub authentication status. Shows OAuth login if not connected.
+
+**Input:** None
+
+**Output (not authenticated):**
+```json
+{
+  "authenticated": false,
+  "authUrl": "https://github.com/login/oauth/authorize?..."
+}
+```
+
+**Output (authenticated):**
+```json
+{
+  "authenticated": true,
+  "user": { "login": "username", "name": "Full Name" }
+}
+```
+
+---
+
+### 5. `list_pull_requests`
+
+List pull requests with priority cascade.
+
+**Input:**
+```json
+{
+  "username": "octocat"  // Optional: filter by author
+}
+```
+
+**Default behavior (no username):**
+1. First shows PRs where YOU are the author
+2. If none, shows PRs where you are a reviewer
+3. If none, shows PRs where you are involved
+
+**Output:**
+```json
+{
+  "pullRequests": [...],
+  "searchType": "authored" | "reviewing" | "involved" | "user_authored",
+  "totalCount": 5
+}
+```
+
+---
+
+### 6. `get_pr_context`
+
+Get full context for a PR including files changed and diffs.
+
+**Input:**
+```json
+{
+  "pr_name": "owner/repo#123"  // Required
+}
+```
+
+**Output:**
+```json
+{
+  "pr": { "number": 123, "title": "...", "author": "..." },
+  "description": "PR description...",
+  "files": [
+    { "filename": "src/index.ts", "status": "modified", "additions": 10, "deletions": 5, "patch": "..." }
+  ],
+  "commits": 3,
+  "additions": 50,
+  "deletions": 20
+}
+```
+
+---
+
+### 7. `post_review_comments`
+
+Post review comments to a PR. Supports general and inline comments.
+
+**Input:**
+```json
+{
+  "pr_name": "owner/repo#123",
+  "comments": [
+    { "body": "Looks good!" },
+    { "body": "Use async here", "path": "src/index.ts", "line": 42 }
+  ],
+  "event": "COMMENT" | "APPROVE" | "REQUEST_CHANGES",
+  "idempotency_key": "unique-key-123"
+}
+```
+
+**Comment Types:**
+- **General comment**: Only `body` - appears in PR conversation
+- **Inline comment**: `body` + `path` + `line` - appears on specific line
+
+**Output:**
+```json
+{
+  "success": true,
+  "reviewId": 12345,
+  "prUrl": "https://github.com/owner/repo/pull/123",
+  "commentsPosted": 2
+}
+```
+
+---
+
+## Example Prompts
+
+### 1. Connect GitHub
+
+| Prompt | Output |
+|--------|--------|
+| "Connect my GitHub" | Shows GitHub OAuth login button to connect account |
+| "Login to GitHub" | Shows GitHub OAuth login button to connect account |
+
+### 2. List Pull Requests
+
+| Prompt | Output |
+|--------|--------|
+| "List my PRs" | Lists your PRs in priority: authored → reviewing → involved |
+| "Show my PRs for review" | Lists PRs where you are a requested reviewer |
+| "List m-musaz PRs" | Lists all open PRs authored by m-musaz |
+
+### 3. Get PR Context
+
+| Prompt | Output |
+|--------|--------|
+| "Review owner/repo#123" | Returns full PR details: title, description, files, diffs |
+| "Get context for PR 123" | Returns full PR details with code changes |
+
+### 4. Post Review Comments
+
+| Prompt | Output |
+|--------|--------|
+| "Add comment: 'Looks good!'" | Posts general comment on PR conversation |
+| "Comment on line 42 of src/index.ts: 'Use async here'" | Posts inline comment on that specific line |
+| "Approve this PR" | Approves the PR (sets status to approved) |
+| "Request changes: 'Please add tests'" | Requests changes with your feedback |
+
+---
+
 ## Project Structure
 
 ```
@@ -927,8 +1084,24 @@ chatgpt-reservations-manager/
 │   │   │                         - Filter by response status
 │   │   │                         - Update RSVP status
 │   │   │
+│   │   ├── github-auth.ts       # GitHub OAuth 2.0 logic
+│   │   │                         - Generate auth URLs
+│   │   │                         - Exchange code for tokens
+│   │   │                         - Scopes: read:user, read:org, repo
+│   │   │
+│   │   ├── github-api.ts        # GitHub API integration
+│   │   │                         - List pull requests
+│   │   │                         - Get PR context (files, diffs)
+│   │   │                         - Post review comments
+│   │   │                         - Approve/Request changes
+│   │   │
+│   │   ├── idempotency-service.ts # Duplicate prevention
+│   │   │                         - In-memory cache (24h TTL)
+│   │   │                         - Prevents duplicate comments
+│   │   │
 │   │   └── types.ts             # TypeScript type definitions
-│   │                             - OAuth tokens, Calendar events, MCP types
+│   │                             - OAuth tokens, Calendar events
+│   │                             - GitHub PR types, Review types
 │   │
 │   ├── dist/                    # Compiled JavaScript (generated)
 │   ├── package.json
@@ -1096,6 +1269,11 @@ NODE_ENV=development
 MCP_OAUTH_CLIENT_ID=chatgpt-mcp-client
 MCP_OAUTH_CLIENT_SECRET=chatgpt-mcp-secret-key-2024
 
+# GitHub OAuth 2.0 Credentials (from GitHub Developer Settings)
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
+GITHUB_REDIRECT_URI=http://localhost:3000/github/callback
+
 # Widget Base URL (for CSP and resource loading)
 # Optional - auto-detected from request in development
 WIDGET_BASE_URL=https://your-app.railway.app
@@ -1200,6 +1378,30 @@ npm run build
 
 ---
 
+## GitHub OAuth App Setup
+
+### Step 1: Create GitHub OAuth App
+
+1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
+2. Click "OAuth Apps" → "New OAuth App"
+3. Fill in the details:
+   - **Application name**: ChatGPT PR Reviewer
+   - **Homepage URL**: `https://your-app.railway.app`
+   - **Authorization callback URL**: `https://your-app.railway.app/github/callback`
+4. Click "Register application"
+5. Copy **Client ID** to `.env` as `GITHUB_CLIENT_ID`
+6. Generate a new **Client Secret** and copy to `.env` as `GITHUB_CLIENT_SECRET`
+
+### Step 2: Required Scopes
+
+| Scope | Purpose |
+|-------|---------|
+| `read:user` | Read user profile (username, avatar) |
+| `read:org` | Read organization/team membership (for team-based PR reviews) |
+| `repo` | Full repository access (required for posting PR reviews) |
+
+---
+
 ## Railway Deployment
 
 ### Step 1: Prepare Repository
@@ -1224,9 +1426,17 @@ git push -u origin main
 Add in Railway dashboard Variables tab:
 
 ```
+# Google OAuth
 GOOGLE_CLIENT_ID=your_production_client_id
 GOOGLE_CLIENT_SECRET=your_production_client_secret
 GOOGLE_REDIRECT_URI=https://your-app.railway.app/oauth/callback
+
+# GitHub OAuth
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
+GITHUB_REDIRECT_URI=https://your-app.railway.app/github/callback
+
+# Server
 PORT=3000
 NODE_ENV=production
 WIDGET_BASE_URL=https://your-app.railway.app
@@ -1260,11 +1470,16 @@ WIDGET_BASE_URL=https://your-app.railway.app
 
 Try these commands:
 
+**Calendar:**
 - "Show my pending calendar invites"
-- "What meetings haven't I responded to?"
-- "Do I have any calendar invitations?"
 - "Accept the meeting with [person name]"
-- "Decline all meetings on Friday"
+
+**GitHub PRs:**
+- "Connect my GitHub"
+- "List my PRs"
+- "Review owner/repo#123"
+- "Add comment: 'Looks good!'"
+- "Approve this PR"
 
 The widget will automatically appear with your data!
 
@@ -1586,6 +1801,10 @@ Instead of separate HTML files for each view, we use a single widget with React 
 - [x] **Resource Parameter** - Proper audience handling
 - [x] **Multi-User Support** - Isolated authentication per ChatGPT user
 - [x] **Modern UI** - 3D card effects with dark mode support
+- [x] **GitHub PR Review** - List PRs, get context, post comments
+- [x] **Inline Comments** - Comment on specific files and lines in PRs
+- [x] **PR Approval/Changes** - Approve or request changes on PRs
+- [x] **Idempotency Protection** - Prevents duplicate comments on retries
 
 ### Potential Future Features
 
@@ -1658,6 +1877,7 @@ Built with:
 - [OpenAI Apps SDK](https://platform.openai.com/docs/apps)
 - [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
 - [Google Calendar API](https://developers.google.com/calendar)
+- [GitHub REST API](https://docs.github.com/en/rest)
 - [React](https://react.dev/)
 - [Tailwind CSS](https://tailwindcss.com/)
 - [Vite](https://vitejs.dev/)
@@ -1671,6 +1891,6 @@ Built with:
 
 ---
 
-**Happy Calendar Managing! 🗓️✨**
+**Happy Calendar Managing & PR Reviewing!**
 
-*This app demonstrates a production-ready implementation of OAuth 2.1 for ChatGPT integrations with full MCP spec compliance, refresh token support, and multi-user isolation.*
+*This app demonstrates a production-ready implementation of OAuth 2.1 for ChatGPT integrations with full MCP spec compliance, refresh token support, multi-user isolation, and GitHub PR review capabilities.*
