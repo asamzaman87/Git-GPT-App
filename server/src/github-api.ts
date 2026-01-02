@@ -574,6 +574,9 @@ export async function postReviewComments(
 
   const accessToken = storedData.tokens.access_token;
 
+  // Normalize PR name for consistent idempotency keys (case-insensitive)
+  const normalizedPrName = String(prName || "").trim().toLowerCase();
+
   // Generate payload hash for content-based deduplication
   const normalizeComment = (c: ReviewComment) => ({
     body: String(c?.body || "").trim(),
@@ -583,7 +586,7 @@ export async function postReviewComments(
   });
 
   const payload = {
-    prName: String(prName || "").trim(),
+    prName: normalizedPrName,
     event,
     comments: Array.isArray(comments) ? comments.map(normalizeComment) : [],
   };
@@ -593,11 +596,10 @@ export async function postReviewComments(
     .update(JSON.stringify(payload))
     .digest("hex");
 
-  const payloadKey = idempotencyService.generateKey(
-    userId,
-    prName,
-    `payload:${payloadHash}`
-  );
+  // Use normalized PR name for idempotency key (ignore userId for content-based dedup)
+  const payloadKey = `idempotency:content:${normalizedPrName}:${payloadHash}`;
+
+  console.log(`[PostReview] Checking idempotency for payload key: ${payloadKey}`);
 
   // Check if this exact payload was already processed
   if (idempotencyService.isProcessed(payloadKey)) {
@@ -608,8 +610,8 @@ export async function postReviewComments(
     }
   }
 
-  // Check if this idempotency key was already processed
-  const idempKey = idempotencyService.generateKey(userId, prName, idempotencyKey);
+  // Check if this idempotency key was already processed (also normalized)
+  const idempKey = `idempotency:key:${normalizedPrName}:${idempotencyKey}`;
 
   if (idempotencyService.isProcessed(idempKey)) {
     const cached = idempotencyService.getResult<PostReviewResponse>(idempKey);
