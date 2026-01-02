@@ -620,6 +620,40 @@ export async function postReviewComments(
   // Clean up lock after 10 seconds
   setTimeout(() => activeRequests.delete(lockKey), 10000);
 
+  try {
+    return await executePostReview(
+      userId,
+      prName,
+      comments,
+      event,
+      idempotencyKey,
+      accessToken,
+      normalizedPrName,
+      resolveLock!
+    );
+  } catch (error) {
+    // Resolve lock with error response so waiting requests don't hang
+    const errorResponse: PostReviewResponse = {
+      success: false,
+      prUrl: "",
+      commentsPosted: 0,
+      message: `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
+    };
+    resolveLock!(errorResponse);
+    throw error;
+  }
+}
+
+async function executePostReview(
+  userId: string,
+  prName: string,
+  comments: ReviewComment[],
+  event: "COMMENT" | "APPROVE" | "REQUEST_CHANGES",
+  idempotencyKey: string,
+  accessToken: string,
+  normalizedPrName: string,
+  resolveLock: (result: PostReviewResponse) => void
+): Promise<PostReviewResponse> {
   // Generate payload hash for content-based deduplication
   const normalizeComment = (c: ReviewComment) => ({
     body: String(c?.body || "").trim(),
@@ -671,7 +705,8 @@ export async function postReviewComments(
 
   if (!parsed) {
     const numberMatch = prName.match(/(\d+)/);
-    const username = storedData.user?.login;
+    const storedData = getGitHubTokens(userId);
+    const username = storedData?.user?.login;
     if (numberMatch && username) {
       const prNumber = parseInt(numberMatch[1], 10);
       const found = await findPRByNumber(accessToken, prNumber, username);
