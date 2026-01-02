@@ -327,9 +327,9 @@ interface ParsedPRIdentifier {
  * - "123" (just number)
  */
 function parsePRIdentifier(prName: string): ParsedPRIdentifier | null {
-  const trimmed = prName.trim().toLowerCase();
+  const trimmed = prName.trim();
 
-  // Format: owner/repo#123
+  // Format: owner/repo#123 (preserve case for GitHub API)
   const fullMatch = trimmed.match(/^([^/]+)\/([^#]+)#(\d+)$/);
   if (fullMatch) {
     return {
