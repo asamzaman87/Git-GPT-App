@@ -143,8 +143,8 @@ app.get('/auth/github', (_req: Request, res: Response) => {
   res.redirect(authUrl);
 });
 
-// GitHub OAuth callback handler
-app.get('/github/callback', async (req: Request, res: Response) => {
+// GitHub OAuth callback handler (support both paths)
+app.get(['/github/callback', '/auth/github/callback'], async (req: Request, res: Response) => {
   const { code, error, state } = req.query;
 
   const userId = (state && typeof state === 'string') ? state : DEFAULT_USER_ID;
