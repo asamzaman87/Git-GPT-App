@@ -282,9 +282,20 @@ The tool requires GitHub authentication - it will prompt to connect if needed.`,
 
 This tool accepts an ARRAY of comments - put ALL comments (both inline and general) in a single call.
 
-**Comment Types (in the comments array):**
-- Inline comments: Include path + line to attach to specific code
-- General comments: Omit path/line for top-level review comments
+**Comment Strategy - ALWAYS prefer inline comments:**
+By default, attach ALL feedback as inline comments to specific lines of code. This is the expected behavior.
+
+**Inline comments (DEFAULT - use for all code-specific feedback):**
+- Include 'path' (file name) and 'line' (line number) to attach comment to specific code
+- Use for: bugs, suggestions, questions, improvements related to specific code
+- Example: { body: "Consider using const instead of let", path: "src/auth.ts", line: 45 }
+
+**General comments (ONLY use when appropriate):**
+- Omit 'path' and 'line' for top-level review comments
+- Use ONLY for: overall summary, high-level architecture feedback, or when user explicitly asks for a general comment
+- Example: { body: "Overall looks good! Just a few minor suggestions above." }
+
+**Best practice:** Provide inline comments for specific code feedback, then optionally add ONE general comment as a summary.
 
 **Review Events:**
 - COMMENT (default): Neutral feedback
@@ -304,7 +315,7 @@ The tool requires GitHub authentication.`,
           },
           comments: {
             type: 'array',
-            description: 'Array of review comments to post.',
+            description: 'Array of review comments. By default, ALL comments should be inline (include path + line). Only omit path/line for overall summary comments.',
             items: {
               type: 'object',
               properties: {
@@ -314,16 +325,16 @@ The tool requires GitHub authentication.`,
                 },
                 path: {
                   type: 'string',
-                  description: 'File path for inline comment (e.g., "src/utils.ts"). Omit for general comments.',
+                  description: 'REQUIRED for inline comments: File path (e.g., "src/utils.ts"). Include this for all code-specific feedback. Omit ONLY for general summary comments.',
                 },
                 line: {
                   type: 'number',
-                  description: 'Line number for inline comment. Omit for general comments.',
+                  description: 'REQUIRED for inline comments: Line number in the file. Include this for all code-specific feedback. Omit ONLY for general summary comments.',
                 },
                 side: {
                   type: 'string',
                   enum: ['LEFT', 'RIGHT'],
-                  description: 'Side of diff: RIGHT (new code, default) or LEFT (old code).',
+                  description: 'Side of diff: RIGHT (new code, default) or LEFT (old code). Only relevant for inline comments.',
                 },
               },
               required: ['body'],
