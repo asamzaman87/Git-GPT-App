@@ -12,7 +12,7 @@ import crypto from "crypto";
 import { getGitHubTokens } from "./token-store.js";
 
 const GITHUB_API_BASE = "https://api.github.com";
-const MAX_RESULTS = 10;
+const DEFAULT_MAX_RESULTS = 10;
 
 // testingss
 
@@ -51,10 +51,22 @@ async function githubRequest<T>(
  */
 async function searchPullRequests(
   accessToken: string,
-  query: string
+  query: string,
+  limit: number = DEFAULT_MAX_RESULTS,
+  dateFrom?: string,
+  dateTo?: string
 ): Promise<GitHubPullRequest[]> {
-  const searchQuery = encodeURIComponent(`${query} type:pr`);
-  const url = `/search/issues?q=${searchQuery}&sort=updated&order=desc&per_page=${MAX_RESULTS}`;
+  // Add date filters to query if provided
+  let fullQuery = query;
+  if (dateFrom) {
+    fullQuery += ` updated:>=${dateFrom}`;
+  }
+  if (dateTo) {
+    fullQuery += ` updated:<=${dateTo}`;
+  }
+  
+  const searchQuery = encodeURIComponent(`${fullQuery} type:pr`);
+  const url = `/search/issues?q=${searchQuery}&sort=updated&order=desc&per_page=${limit}`;
 
   const result = await githubRequest<{
     total_count: number;
@@ -163,7 +175,10 @@ async function getAuthenticatedUserLogin(accessToken: string): Promise<string> {
  */
 export async function listPullRequests(
   userId: string,
-  specifiedUser?: string
+  specifiedUser?: string,
+  limit: number = DEFAULT_MAX_RESULTS,
+  dateFrom?: string,
+  dateTo?: string
 ): Promise<ListPullRequestsResult> {
   const storedData = getGitHubTokens(userId);
 
@@ -179,7 +194,10 @@ export async function listPullRequests(
   if (specifiedUser) {
     const prs = await searchPullRequests(
       accessToken,
-      `author:${specifiedUser} is:open`
+      `author:${specifiedUser} is:open`,
+      limit,
+      dateFrom,
+      dateTo
     );
     return {
       pullRequests: prs,
@@ -193,7 +211,10 @@ export async function listPullRequests(
   console.log(`Searching for open PRs authored by ${myUsername}...`);
   const authoredPRs = await searchPullRequests(
     accessToken,
-    `author:${myUsername} is:open`
+    `author:${myUsername} is:open`,
+    limit,
+    dateFrom,
+    dateTo
   );
 
   if (authoredPRs.length > 0) {
@@ -211,7 +232,10 @@ export async function listPullRequests(
   // Direct review requests
   let reviewingPRs = await searchPullRequests(
     accessToken,
-    `review-requested:${myUsername} is:open`
+    `review-requested:${myUsername} is:open`,
+    limit,
+    dateFrom,
+    dateTo
   );
 
   // Team-based review requests
@@ -221,7 +245,7 @@ export async function listPullRequests(
   for (const team of teams) {
     const teamQuery = `team-review-requested:${team.organization.login}/${team.slug} is:open`;
     console.log(`Searching for team reviews: ${teamQuery}`);
-    const teamPRs = await searchPullRequests(accessToken, teamQuery);
+    const teamPRs = await searchPullRequests(accessToken, teamQuery, limit, dateFrom, dateTo);
 
     // Merge team PRs, avoiding duplicates
     for (const pr of teamPRs) {
@@ -231,12 +255,12 @@ export async function listPullRequests(
     }
   }
 
-  // Sort by updated_at and limit to MAX_RESULTS
+  // Sort by updated_at and limit to user-specified limit
   reviewingPRs.sort(
     (a, b) =>
       new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
   );
-  reviewingPRs = reviewingPRs.slice(0, MAX_RESULTS);
+  reviewingPRs = reviewingPRs.slice(0, limit);
 
   if (reviewingPRs.length > 0) {
     console.log(`Found ${reviewingPRs.length} PRs to review`);
@@ -251,7 +275,10 @@ export async function listPullRequests(
   console.log(`No review requests found. Searching for involved PRs...`);
   const involvedPRs = await searchPullRequests(
     accessToken,
-    `involves:${myUsername} is:open`
+    `involves:${myUsername} is:open`,
+    limit,
+    dateFrom,
+    dateTo
   );
 
   console.log(`Found ${involvedPRs.length} involved PRs`);

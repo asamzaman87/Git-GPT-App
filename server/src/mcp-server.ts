@@ -159,7 +159,7 @@ function getTools(): AppsTool[] {
     {
       name: 'list_pull_requests',
       title: 'List Pull Requests',
-      description: `List the 10 most recent open pull requests from GitHub.
+      description: `List open pull requests from GitHub. By default, returns 10 most recent PRs, but you can specify a different limit.
 
 **Default behavior (no username provided):**
 1. First shows PRs where YOU are the author
@@ -183,6 +183,18 @@ The tool requires GitHub authentication - it will prompt to connect if needed.`,
           username: {
             type: 'string',
             description: 'Optional: GitHub username to filter PRs by author. If not provided, shows your own PRs using the priority cascade (authored → reviewing → involved).',
+          },
+          limit: {
+            type: 'number',
+            description: 'Optional: Maximum number of PRs to return. Defaults to 10 if not specified.',
+          },
+          date_from: {
+            type: 'string',
+            description: 'Optional: Filter PRs updated on or after this date (ISO format: YYYY-MM-DD). ChatGPT should calculate the date based on user input like "last week".',
+          },
+          date_to: {
+            type: 'string',
+            description: 'Optional: Filter PRs updated on or before this date (ISO format: YYYY-MM-DD).',
           },
         },
         required: [],
@@ -392,7 +404,7 @@ function handleCheckGitHubAuthStatus(userId: string): AppsToolResponse {
  * Handle list_pull_requests tool
  */
 async function handleListPullRequests(
-  args: { username?: string },
+  args: { username?: string; limit?: number; date_from?: string; date_to?: string },
   userId: string
 ): Promise<AppsToolResponse> {
   // Check authentication first
@@ -413,7 +425,7 @@ async function handleListPullRequests(
   }
 
   try {
-    const result = await listPullRequests(userId, args.username);
+    const result = await listPullRequests(userId, args.username, args.limit, args.date_from, args.date_to);
 
     // Build human-readable message based on search type
     let message: string;
@@ -712,7 +724,7 @@ export function createMCPServer(): Server {
 
       case 'list_pull_requests':
         return await handleListPullRequests(
-          args as { username?: string },
+          args as { username?: string; limit?: number; date_from?: string; date_to?: string },
           userId
         ) as unknown as CallToolResult;
 
@@ -884,7 +896,7 @@ export async function handleMCPRequest(
 
         case 'list_pull_requests':
           return await handleListPullRequests(
-            args as { username?: string },
+            args as { username?: string; limit?: number; date_from?: string; date_to?: string },
             toolUserId
           );
 
