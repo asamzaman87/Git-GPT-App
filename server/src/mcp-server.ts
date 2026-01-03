@@ -428,6 +428,7 @@ async function handleListPullRequests(
         authRequired: true,
         authType: 'github',
         authUrl,
+        pendingParams: args, // Preserve the original parameters
       },
       _meta: {
         'openai/outputTemplate': 'ui://widget/github-widget.html',

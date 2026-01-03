@@ -55,6 +55,8 @@ export default function PRContextWidget() {
     setPrsData: () => {},
     prContextData: prContextData?.prContext || null,
     setPrContextData: () => {},
+    pendingParams: null,
+    setPendingParams: () => {},
   };
 
   if (isLoading) {

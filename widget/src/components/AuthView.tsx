@@ -20,7 +20,7 @@ interface AuthViewProps {
 }
 
 export function AuthView({ initialAuthData }: AuthViewProps) {
-  const { isDark, callTool, openExternal, setWidgetState, notifyHeight, authData, setAuthData, setPrsData } = useWidget();
+  const { isDark, callTool, openExternal, setWidgetState, notifyHeight, authData, setAuthData, setPrsData, pendingParams, setPendingParams } = useWidget();
   const navigate = useNavigate();
   const [isPolling, setIsPolling] = useState(false);
   const [isLoadingPRs, setIsLoadingPRs] = useState(false);
@@ -34,11 +34,16 @@ export function AuthView({ initialAuthData }: AuthViewProps) {
   const handleListPRs = async () => {
     setIsLoadingPRs(true);
     try {
-      const result = await callTool('list_pull_requests', {}) as { structuredContent?: PullRequestsOutput };
+      // Use pending params if available (from pre-auth request), otherwise use empty object
+      const params = pendingParams || {};
+      console.log('[AuthView] Calling list_pull_requests with params:', params);
+      const result = await callTool('list_pull_requests', params) as { structuredContent?: PullRequestsOutput };
       if (result?.structuredContent) {
         setPrsData(result.structuredContent);
         setWidgetState({ view: 'prs', prs: result.structuredContent });
         navigate('/prs');
+        // Clear pending params after successful use
+        setPendingParams(null);
       }
     } catch (err) {
       console.error('[Widget] Failed to fetch PRs:', err);

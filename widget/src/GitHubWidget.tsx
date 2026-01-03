@@ -14,7 +14,7 @@ import './main.css';
 function WidgetRouter({ initialData }: { initialData: unknown }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { setAuthData, setPrsData, setPrContextData, prContextData, authData } = useWidget();
+  const { setAuthData, setPrsData, setPrContextData, prContextData, authData, setPendingParams } = useWidget();
   const [initialRouteSet, setInitialRouteSet] = useState(false);
 
   useEffect(() => {
@@ -56,6 +56,11 @@ function WidgetRouter({ initialData }: { initialData: unknown }) {
         authenticated: false,
         authUrl: data.authUrl as string | undefined
       });
+      // Store pending params so they can be used after authentication
+      if ('pendingParams' in data && data.pendingParams) {
+        console.log('[Widget] Storing pending params:', data.pendingParams);
+        setPendingParams(data.pendingParams as Record<string, unknown>);
+      }
       setInitialRouteSet(true);
       return;
     }
@@ -84,6 +89,10 @@ function WidgetRouter({ initialData }: { initialData: unknown }) {
 
     // Handle authRequired
     if ('authRequired' in data && data.authRequired === true) {
+      // Store pending params if present
+      if ('pendingParams' in data && data.pendingParams) {
+        setPendingParams(data.pendingParams as Record<string, unknown>);
+      }
       return {
         authenticated: false,
         authUrl: data.authUrl as string | undefined
@@ -118,6 +127,7 @@ export default function GitHubWidget() {
   const [authData, setAuthData] = useState<AuthStatusOutput | null>(null);
   const [prsData, setPrsData] = useState<PullRequestsOutput | null>(null);
   const [prContextData, setPrContextData] = useState<PullRequestContext | null>(null);
+  const [pendingParams, setPendingParams] = useState<Record<string, unknown> | null>(null);
 
   // Only restore from widgetState if there's no fresh data from the tool call
   useEffect(() => {
@@ -154,6 +164,8 @@ export default function GitHubWidget() {
     setPrsData,
     prContextData,
     setPrContextData,
+    pendingParams,
+    setPendingParams,
   };
 
   if (isLoading) {

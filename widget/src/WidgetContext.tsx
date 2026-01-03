@@ -14,6 +14,8 @@ export interface WidgetContextType {
   setPrsData: (data: PullRequestsOutput | null) => void;
   prContextData: PullRequestContext | null;
   setPrContextData: (data: PullRequestContext | null) => void;
+  pendingParams: Record<string, unknown> | null;
+  setPendingParams: (params: Record<string, unknown> | null) => void;
 }
 
 export const WidgetContext = createContext<WidgetContextType | null>(null);
