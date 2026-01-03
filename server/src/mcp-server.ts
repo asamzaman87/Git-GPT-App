@@ -200,6 +200,11 @@ The tool requires GitHub authentication - it will prompt to connect if needed.`,
             type: 'string',
             description: 'Optional: Filter PRs by repository in "owner/repo" format (e.g., "facebook/react", "microsoft/vscode"). If not provided, searches across all accessible repositories.',
           },
+          filter_type: {
+            type: 'string',
+            enum: ['authored', 'reviewing', 'involved'],
+            description: 'Optional: Filter by PR type. "authored" = PRs you created, "reviewing" = PRs where you\'re a reviewer, "involved" = PRs where you\'re mentioned/commented. If not specified, uses priority cascade (authored → reviewing → involved).',
+          },
         },
         required: [],
         additionalProperties: false,
@@ -408,7 +413,7 @@ function handleCheckGitHubAuthStatus(userId: string): AppsToolResponse {
  * Handle list_pull_requests tool
  */
 async function handleListPullRequests(
-  args: { username?: string; limit?: number; date_from?: string; date_to?: string; repository?: string },
+  args: { username?: string; limit?: number; date_from?: string; date_to?: string; repository?: string; filter_type?: 'authored' | 'reviewing' | 'involved' },
   userId: string
 ): Promise<AppsToolResponse> {
   // Check authentication first
@@ -429,7 +434,7 @@ async function handleListPullRequests(
   }
 
   try {
-    const result = await listPullRequests(userId, args.username, args.limit, args.date_from, args.date_to, args.repository);
+    const result = await listPullRequests(userId, args.username, args.limit, args.date_from, args.date_to, args.repository, args.filter_type);
 
     // Build human-readable message based on search type
     let message: string;
@@ -728,7 +733,7 @@ export function createMCPServer(): Server {
 
       case 'list_pull_requests':
         return await handleListPullRequests(
-          args as { username?: string; limit?: number; date_from?: string; date_to?: string; repository?: string },
+          args as { username?: string; limit?: number; date_from?: string; date_to?: string; repository?: string; filter_type?: 'authored' | 'reviewing' | 'involved' },
           userId
         ) as unknown as CallToolResult;
 
@@ -900,7 +905,7 @@ export async function handleMCPRequest(
 
         case 'list_pull_requests':
           return await handleListPullRequests(
-            args as { username?: string; limit?: number; date_from?: string; date_to?: string; repository?: string },
+            args as { username?: string; limit?: number; date_from?: string; date_to?: string; repository?: string; filter_type?: 'authored' | 'reviewing' | 'involved' },
             toolUserId
           );
 

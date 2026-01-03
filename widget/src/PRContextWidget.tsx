@@ -98,7 +98,7 @@ export default function PRContextWidget() {
   return (
     <WidgetContext.Provider value={contextValue}>
       <div className={`p-6 rounded-xl border text-center shadow-sm ${theme.card(isDark)}`}>
-        <p className={theme.textSecondary(isDark)}>No PR context available</p>
+        <p className={theme.textSecondary(isDark)}>Fetching PR context...</p>
       </div>
     </WidgetContext.Provider>
   );

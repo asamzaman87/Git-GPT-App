@@ -176,6 +176,7 @@ async function getAuthenticatedUserLogin(accessToken: string): Promise<string> {
  * 3. PRs where user is involved
  *
  * If a specific user is provided, show PRs where that user is the author.
+ * If filterType is specified, only search that type. Otherwise use priority cascade.
  */
 export async function listPullRequests(
   userId: string,
@@ -183,7 +184,8 @@ export async function listPullRequests(
   limit: number = DEFAULT_MAX_RESULTS,
   dateFrom?: string,
   dateTo?: string,
-  repository?: string
+  repository?: string,
+  filterType?: 'authored' | 'reviewing' | 'involved'
 ): Promise<ListPullRequestsResult> {
   const storedData = getGitHubTokens(userId);
 
@@ -213,6 +215,89 @@ export async function listPullRequests(
     };
   }
 
+  // If a specific filter type is requested, only search that type
+  if (filterType === 'authored') {
+    console.log(`Searching for open PRs authored by ${myUsername}...`);
+    const authoredPRs = await searchPullRequests(
+      accessToken,
+      `author:${myUsername} is:open`,
+      limit,
+      dateFrom,
+      dateTo,
+      repository
+    );
+    console.log(`Found ${authoredPRs.length} authored PRs`);
+    return {
+      pullRequests: authoredPRs,
+      searchType: "authored",
+      totalCount: authoredPRs.length,
+    };
+  }
+
+  if (filterType === 'reviewing') {
+    console.log(`Searching for PRs where ${myUsername} is a reviewer...`);
+    
+    // Direct review requests
+    let reviewingPRs = await searchPullRequests(
+      accessToken,
+      `review-requested:${myUsername} is:open`,
+      limit,
+      dateFrom,
+      dateTo,
+      repository
+    );
+
+    // Team-based review requests
+    const teams = await getUserTeams(accessToken);
+    console.log(`User belongs to ${teams.length} teams`);
+
+    for (const team of teams) {
+      const teamQuery = `team-review-requested:${team.organization.login}/${team.slug} is:open`;
+      console.log(`Searching for team reviews: ${teamQuery}`);
+      const teamPRs = await searchPullRequests(accessToken, teamQuery, limit, dateFrom, dateTo, repository);
+
+      // Merge team PRs, avoiding duplicates
+      for (const pr of teamPRs) {
+        if (!reviewingPRs.find((existing) => existing.id === pr.id)) {
+          reviewingPRs.push(pr);
+        }
+      }
+    }
+
+    // Sort by updated_at and limit to user-specified limit
+    reviewingPRs.sort(
+      (a, b) =>
+        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    );
+    reviewingPRs = reviewingPRs.slice(0, limit);
+
+    console.log(`Found ${reviewingPRs.length} PRs to review`);
+    return {
+      pullRequests: reviewingPRs,
+      searchType: "reviewing",
+      totalCount: reviewingPRs.length,
+    };
+  }
+
+  if (filterType === 'involved') {
+    console.log(`Searching for PRs where ${myUsername} is involved...`);
+    const involvedPRs = await searchPullRequests(
+      accessToken,
+      `involves:${myUsername} is:open`,
+      limit,
+      dateFrom,
+      dateTo,
+      repository
+    );
+    console.log(`Found ${involvedPRs.length} involved PRs`);
+    return {
+      pullRequests: involvedPRs,
+      searchType: "involved",
+      totalCount: involvedPRs.length,
+    };
+  }
+
+  // Default behavior: Priority cascade
   // Priority 1: PRs where I am the author
   console.log(`Searching for open PRs authored by ${myUsername}...`);
   const authoredPRs = await searchPullRequests(
