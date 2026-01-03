@@ -58,7 +58,7 @@ function getWidgetResources(): WidgetResource[] {
         'openai/widgetDomain': 'https://chatgpt.com',
         'openai/widgetCSP': {
           connect_domains: ['https://chatgpt.com', baseUrl, 'https://github.com', 'https://api.github.com'],
-          resource_domains: [baseUrl, 'https://*.oaistatic.com', 'https://github.com'],
+          resource_domains: [baseUrl, 'https://*.oaistatic.com', 'https://github.com', 'https://avatars.githubusercontent.com'],
           redirect_domains: ['https://github.com'],
         },
       },
@@ -73,7 +73,7 @@ function getWidgetResources(): WidgetResource[] {
         'openai/widgetDomain': 'https://chatgpt.com',
         'openai/widgetCSP': {
           connect_domains: ['https://chatgpt.com', baseUrl, 'https://github.com', 'https://api.github.com'],
-          resource_domains: [baseUrl, 'https://*.oaistatic.com', 'https://github.com'],
+          resource_domains: [baseUrl, 'https://*.oaistatic.com', 'https://github.com', 'https://avatars.githubusercontent.com'],
           redirect_domains: ['https://github.com'],
         },
       },
