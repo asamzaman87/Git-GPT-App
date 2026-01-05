@@ -394,11 +394,11 @@ interface AppsToolResponse {
 /**
  * Handle check_github_auth_status tool
  */
-function handleCheckGitHubAuthStatus(userId: string): AppsToolResponse {
-  const authenticated = isGitHubAuthenticated(userId);
+async function handleCheckGitHubAuthStatus(userId: string): Promise<AppsToolResponse> {
+  const authenticated = await isGitHubAuthenticated(userId);
 
   if (authenticated) {
-    const user = getGitHubUser(userId);
+    const user = await getGitHubUser(userId);
     return {
       content: [{ type: 'text', text: `User is connected to GitHub as @${user?.login}.` }],
       structuredContent: {
@@ -436,7 +436,7 @@ async function handleListPullRequests(
   userId: string
 ): Promise<AppsToolResponse> {
   // Check authentication first
-  if (!isGitHubAuthenticated(userId)) {
+  if (!(await isGitHubAuthenticated(userId))) {
     const authUrl = getGitHubAuthUrl(userId);
     return {
       content: [{ type: 'text', text: 'User needs to connect their GitHub account first.' }],
@@ -522,7 +522,7 @@ async function handleGetPRContext(
   userId: string
 ): Promise<AppsToolResponse> {
   // Check authentication first
-  if (!isGitHubAuthenticated(userId)) {
+  if (!(await isGitHubAuthenticated(userId))) {
     const authUrl = getGitHubAuthUrl(userId);
     return {
       content: [{ type: 'text', text: 'User needs to connect their GitHub account first.' }],
@@ -603,7 +603,7 @@ async function handlePostReviewComments(
   userId: string
 ): Promise<AppsToolResponse> {
   // Check authentication first
-  if (!isGitHubAuthenticated(userId)) {
+  if (!(await isGitHubAuthenticated(userId))) {
     const authUrl = getGitHubAuthUrl(userId);
     return {
       content: [{ type: 'text', text: 'User needs to connect their GitHub account first.' }],
@@ -753,7 +753,7 @@ export function createMCPServer(): Server {
 
     switch (name) {
       case 'check_github_auth_status':
-        return handleCheckGitHubAuthStatus(userId) as unknown as CallToolResult;
+        return await handleCheckGitHubAuthStatus(userId) as unknown as CallToolResult;
 
       case 'list_pull_requests':
         return await handleListPullRequests(
@@ -925,7 +925,7 @@ export async function handleMCPRequest(
 
       switch (name) {
         case 'check_github_auth_status':
-          return handleCheckGitHubAuthStatus(toolUserId);
+          return await handleCheckGitHubAuthStatus(toolUserId);
 
         case 'list_pull_requests':
           return await handleListPullRequests(

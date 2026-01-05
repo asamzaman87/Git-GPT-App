@@ -119,14 +119,14 @@ app.get('/widgets/:name.html', (req: Request, res: Response) => {
 // ============================================
 
 // Get GitHub auth status
-app.get('/auth/github/status', (_req: Request, res: Response) => {
+app.get('/auth/github/status', async (_req: Request, res: Response) => {
   const userId = DEFAULT_USER_ID;
-  const authenticated = isGitHubAuthenticated(userId);
+  const authenticated = await isGitHubAuthenticated(userId);
 
   if (authenticated) {
     res.json({
       authenticated: true,
-      user: getGitHubUser(userId),
+      user: await getGitHubUser(userId),
     });
   } else {
     res.json({
@@ -261,7 +261,7 @@ app.get('/api/pr-context/:owner/:repo/:number', async (req: Request, res: Respon
   const userId = DEFAULT_USER_ID;
   const { owner, repo, number } = req.params;
 
-  if (!isGitHubAuthenticated(userId)) {
+  if (!(await isGitHubAuthenticated(userId))) {
     return res.status(401).json({
       success: false,
       error: 'Not authenticated with GitHub',

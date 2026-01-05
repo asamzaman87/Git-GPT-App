@@ -199,7 +199,7 @@ export async function listPullRequests(
   repository?: string,
   filterType?: 'authored' | 'reviewing' | 'involved'
 ): Promise<ListPullRequestsResult> {
-  const storedData = getGitHubTokens(userId);
+  const storedData = await getGitHubTokens(userId);
 
   if (!storedData?.tokens?.access_token) {
     throw new Error("Not authenticated with GitHub");
@@ -401,8 +401,8 @@ export async function listPullRequests(
 /**
  * Check if the user has valid GitHub authentication
  */
-export function hasGitHubAuth(userId: string): boolean {
-  const storedData = getGitHubTokens(userId);
+export async function hasGitHubAuth(userId: string): Promise<boolean> {
+  const storedData = await getGitHubTokens(userId);
   return !!storedData?.tokens?.access_token;
 }
 
@@ -556,7 +556,7 @@ export async function getPullRequestContext(
   userId: string,
   prName: string
 ): Promise<PullRequestContext> {
-  const storedData = getGitHubTokens(userId);
+  const storedData = await getGitHubTokens(userId);
 
   if (!storedData?.tokens?.access_token) {
     throw new Error("Not authenticated with GitHub");
@@ -720,7 +720,7 @@ export async function postReviewComments(
   event: "COMMENT" | "APPROVE" | "REQUEST_CHANGES" = "COMMENT",
   idempotencyKey: string
 ): Promise<PostReviewResponse> {
-  const storedData = getGitHubTokens(userId);
+  const storedData = await getGitHubTokens(userId);
 
   if (!storedData?.tokens?.access_token) {
     throw new Error("Not authenticated with GitHub");
@@ -765,7 +765,8 @@ export async function postReviewComments(
       idempotencyKey,
       accessToken,
       normalizedPrName,
-      resolveLock!
+      resolveLock!,
+      storedData.user?.login
     );
   } catch (error) {
     // Resolve lock with error response so waiting requests don't hang
@@ -788,7 +789,8 @@ async function executePostReview(
   idempotencyKey: string,
   accessToken: string,
   normalizedPrName: string,
-  resolveLock: (result: PostReviewResponse) => void
+  resolveLock: (result: PostReviewResponse) => void,
+  username?: string
 ): Promise<PostReviewResponse> {
   // Generate payload hash for content-based deduplication
   const normalizeComment = (c: ReviewComment) => ({
@@ -841,8 +843,6 @@ async function executePostReview(
 
   if (!parsed) {
     const numberMatch = prName.match(/(\d+)/);
-    const storedData = getGitHubTokens(userId);
-    const username = storedData?.user?.login;
     if (numberMatch && username) {
       const prNumber = parseInt(numberMatch[1], 10);
       const found = await findPRByNumber(accessToken, prNumber, username);

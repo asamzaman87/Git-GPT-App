@@ -155,7 +155,7 @@ export async function handleGitHubOAuthCallback(
   const user = await getGitHubUserInfo(tokens.access_token);
 
   // Save tokens
-  saveGitHubTokens(userId, tokens, user);
+  await saveGitHubTokens(userId, tokens, user);
 
   return { user };
 }
@@ -163,22 +163,22 @@ export async function handleGitHubOAuthCallback(
 /**
  * Check if a user is authenticated with GitHub
  */
-export function isGitHubAuthenticated(userId: string): boolean {
-  const storedData = getGitHubTokens(userId);
+export async function isGitHubAuthenticated(userId: string): Promise<boolean> {
+  const storedData = await getGitHubTokens(userId);
   return !!storedData && !!storedData.tokens && !!storedData.tokens.access_token;
 }
 
 /**
  * Get the GitHub user for an authenticated user
  */
-export function getGitHubUser(userId: string): GitHubUser | null {
-  const storedData = getGitHubTokens(userId);
+export async function getGitHubUser(userId: string): Promise<GitHubUser | null> {
+  const storedData = await getGitHubTokens(userId);
   return storedData?.user || null;
 }
 
 /**
  * Revoke/logout GitHub for a user
  */
-export function revokeGitHubTokens(userId: string): boolean {
-  return deleteGitHubTokens(userId);
+export async function revokeGitHubTokens(userId: string): Promise<boolean> {
+  return await deleteGitHubTokens(userId);
 }
